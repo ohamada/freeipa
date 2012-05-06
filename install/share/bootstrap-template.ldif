@@ -143,6 +143,18 @@ objectClass: nsContainer
 objectClass: top
 cn: masters
 
+dn: cn=hubs,cn=ipa,cn=etc,$SUFFIX
+changetype: add
+objectClass: nsContainer
+objectClass: top
+cn: hubs
+
+dn: cn=consumers,cn=ipa,cn=etc,$SUFFIX
+changetype: add
+objectClass: nsContainer
+objectClass: top
+cn: consumers
+
 dn: cn=replicas,cn=ipa,cn=etc,$SUFFIX
 changetype: add
 objectClass: nsContainer
