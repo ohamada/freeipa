@@ -14,6 +14,7 @@ MSGFMT = @MSGFMT@
 MSGINIT = @MSGINIT@
 MSGMERGE = @MSGMERGE@
 MSGCMP = @MSGCMP@
+MSGATTRIB = @MSGATTRIB@
 TX = @TX@
 IPA_TEST_I18N = ../../tests/i18n.py
 
@@ -67,7 +68,7 @@ C_POTFILES = $(C_FILES) $(H_FILES)
 
 .SUFFIXES:
 .SUFFIXES: .po .mo
-.PHONY: all create-po update-po update-pot install mostlyclean clean distclean test mo-files debug
+.PHONY: all create-po update-po update-pot install mostlyclean clean distclean test mo-files debug strip-po merge-po
 
 all:
 
@@ -77,7 +78,7 @@ SUFFIXES = .po .mo
 	@echo Creating $@; \
 	$(MSGFMT) -c -o t-$@ $< && mv t-$@ $@
 
-$(po_files): $(DOMAIN).pot
+$(po_files): update-pot
 	@if [ ! -f $@ ]; then \
 	    lang=`echo $@ | $(SED) -r -e 's/\.po$$//'` # Strip .po suffix ; \
 	    echo Creating nonexistent $@, you should add this file to your SCM repository; \
@@ -85,6 +86,15 @@ $(po_files): $(DOMAIN).pot
 	fi; \
 	echo Merging $(DOMAIN).pot into $@; \
 	$(MSGMERGE) --no-fuzzy-matching -o $@ $@ $(DOMAIN).pot
+
+strip-po:
+	@for po_file in $$(ls *.po); do \
+		echo Stripping $$po_file; \
+		$(MSGATTRIB) --translated --no-fuzzy --no-location $$po_file > $$po_file.tmp; \
+		mv $$po_file.tmp $$po_file; \
+	done
+	@echo Remove empty translation files; \
+	find . -name '*.po' -empty -exec rm -v {} \;
 
 create-po: $(DOMAIN).pot
 	@for po_file in $(po_files); do \
@@ -98,9 +108,13 @@ create-po: $(DOMAIN).pot
 
 pull-po:
 	cd ../..; $(TX) pull -f
+	$(MAKE) strip-po
 
-update-po: update-pot
+merge-po: update-pot
 	$(MAKE) $(po_files)
+
+update-po: merge-po
+	$(MAKE) strip-po
 
 update-pot:
 	@rm -f $(DOMAIN).pot.update
