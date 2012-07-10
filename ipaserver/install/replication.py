@@ -43,6 +43,11 @@ REPL_MAN_DN = "cn=replication manager,cn=config"
 IPA_REPLICA = 1
 WINSYNC = 2
 
+# types of replica
+MASTER = 0
+CONSUMER = 1
+HUB = 2
+
 def replica_conn_check(master_host, host_name, realm, check_ca,
                        admin_password=None):
     """
