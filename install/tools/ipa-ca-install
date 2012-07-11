@@ -20,6 +20,7 @@
 
 import sys
 import socket
+import ldap
 
 import os, shutil
 
@@ -33,8 +34,10 @@ from ipaserver.install.installutils import ReplicaConfig, expand_replica_info, r
 from ipaserver.install.installutils import get_host_name, BadHostError
 from ipaserver.install import dsinstance, cainstance
 from ipaserver.install.replication import replica_conn_check
+from ipaserver import ipaldap
 from ipapython import version
 from ipalib import api, util
+from ipalib.dn import DN
 from ipapython.config import IPAOptionParser
 from ipapython import sysrestore
 from ipapython.ipa_log_manager import *
@@ -70,6 +73,27 @@ def parse_options():
 
 def get_dirman_password():
     return installutils.read_password("Directory Manager (existing master)", confirm=False, validate=False)
+
+def check_if_master(config, dirman_passwd=None):
+    is_master = False
+    fqdn = installutils.get_fqdn()
+
+    try:
+        conn = ipaldap.IPAdmin(fqdn, 636, cacert=CACERT)
+        if dirman_passwd:
+            conn.do_simple_bind(bindpw=dirman_passwd)
+        else:
+            conn.do_sasl_gssapi_bind()
+
+        dn = DN(('cn','masters'), ('cn','ipa'), ('cn','etc'), ipautil.realm_to_suffix(config.realm_name))
+        entries = conn.search_s(str(dn), ldap.SCOPE_ONELEVEL)
+
+        for ent in entries:
+            if fqdn == ent.cn:
+                sys.exit('CA can not be installed on read-only replica.')
+
+    except Exception, e:
+        sys.exit('Failed to get data from master server: %s' % str(e))      
 
 def main():
     safe_options, options, filename = parse_options()
@@ -139,6 +163,10 @@ def main():
         except KeyboardInterrupt:
             sys.exit(0)
     config.dir = dir
+
+    #assert that CA is not installed on master replica
+    check_if_master(config, dirman_password)
+
     config.setup_ca = True
 
     if not options.skip_conncheck:
