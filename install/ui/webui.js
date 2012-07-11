@@ -151,6 +151,9 @@ $(function() {
         } else if (whoami.hasOwnProperty('memberof_role') &&
                    whoami.memberof_role.length > 0) {
             factory = IPA.admin_navigation;
+        } else if (whoami.hasOwnProperty('memberofindirect_role') &&
+                   whoami.memberofindirect_role.length > 0) {
+            factory = IPA.admin_navigation;
         } else {
             factory = IPA.self_serv_navigation;
         }
@@ -167,7 +170,7 @@ $(function() {
 
         var whoami = IPA.whoami;
         IPA.whoami_pkey = whoami.uid[0];
-        $('#loggedinas strong').text(whoami.cn[0]);
+        $('#loggedinas .login').text(whoami.cn[0]);
         $('#loggedinas a').fragment(
             {'user-facet': 'details', 'user-pkey': IPA.whoami_pkey}, 2);
 
@@ -175,6 +178,9 @@ $(function() {
             IPA.logout();
             return false;
         }).text(IPA.messages.login.logout);
+
+        $('.header-loggedinas').css('visibility','visible');
+        IPA.update_password_expiration();
 
         IPA.nav = create_navigation();
         IPA.nav.create();
