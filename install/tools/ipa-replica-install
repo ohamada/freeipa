@@ -31,6 +31,7 @@ from ipaserver.install import dsinstance, installutils, krbinstance, service
 from ipaserver.install import bindinstance, httpinstance, ntpinstance, certs
 from ipaserver.install import memcacheinstance
 from ipaserver.install.replication import replica_conn_check, ReplicationManager
+from ipaserver.install.replication import MASTER, CONSUMER, HUB
 from ipaserver.install.installutils import HostnameLocalhost, resolve_host
 from ipaserver.install.installutils import ReplicaConfig, expand_replica_info, read_replica_info
 from ipaserver.install.installutils import get_host_name, BadHostError
@@ -99,6 +100,15 @@ def parse_options():
                       help="do not automatically create DNS SSHFP records")
     parser.add_option_group(dns_group)
 
+    replica_group = OptionGroup(parser, "Replication settings")
+    replica_group.add_option("--consumer", dest="repl_type", action="store_const", const=CONSUMER,
+                      default=MASTER, help="Select Consumer type of read-only replica")
+    replica_group.add_option("--hub", dest="repl_type", action="store_const", const=HUB,
+                      default=MASTER, help="Select Hub type of read-only replica")
+    replica_group.add_option("--shadow", dest="shadow", action="store_true", default=False,
+                      help="Make the Hub replica hidden in topology")
+    parser.add_option_group(replica_group)
+
     options, args = parser.parse_args()
     safe_options = parser.get_safe_opts(options)
 
@@ -121,6 +131,12 @@ def parse_options():
     elif options.reverse_zone and options.no_reverse:
         parser.error("You cannot specify a --reverse-zone option together with --no-reverse")
 
+    if options.repl_type != MASTER:
+        if options.setup_ca:
+            parser.error("You cannot specify a --setup-ca option with --hub or --consumer")
+    if options.shadow and options.repl_type != HUB:
+        parser.error("You cannot specify a --shadow option with other option than --hub")
+
     return safe_options, options, args[0]
 
 def get_dirman_password():
@@ -130,7 +146,7 @@ def set_owner(config, dir):
     pw = pwd.getpwnam(dsinstance.DS_USER)
     os.chown(dir, pw.pw_uid, pw.pw_gid)
 
-def install_replica_ds(config):
+def install_replica_ds(config, replica_type=MASTER):
     dsinstance.check_ports()
 
     # if we have a pkcs12 file, create the cert db from
@@ -145,7 +161,7 @@ def install_replica_ds(config):
     ds.create_replica(config.realm_name,
                       config.master_host_name, config.host_name,
                       config.domain_name, config.dirman_password,
-                      pkcs12_info)
+                      pkcs12_info, replica_type)
 
     return ds
 
@@ -449,7 +465,7 @@ def main():
     install_dns_records(config, options)
 
     # Configure dirsrv
-    ds = install_replica_ds(config)
+    ds = install_replica_ds(config, options.repl_type)
 
     # We need to ldap_enable the CA now that DS is up and running
     if CA and config.setup_ca:
@@ -458,12 +474,14 @@ def main():
         cs.add_simple_service('dogtagldap/%s@%s' % (config.host_name, config.realm_name))
         cs.add_cert_to_service()
 
-    krb = install_krb(config, setup_pkinit=options.setup_pkinit)
-    http = install_http(config, auto_redirect=options.ui_redirect)
-    if CA:
-        CA.import_ra_cert(dir + "/ra.p12")
-        CA.fix_ra_perms()
-        ipaservices.knownservices.httpd.restart()
+    # Krb, webui and client are not supported on shadow replica
+    if not options.shadow:
+        krb = install_krb(config, setup_pkinit=options.setup_pkinit)
+        http = install_http(config, auto_redirect=options.ui_redirect)
+        if CA:
+            CA.import_ra_cert(dir + "/ra.p12")
+            CA.fix_ra_perms()
+            ipaservices.knownservices.httpd.restart()
 
     # The DS instance is created before the keytab, add the SSL cert we
     # generated
@@ -477,30 +495,32 @@ def main():
     service.print_msg("Restarting the directory server")
     ds.restart()
 
-    service.print_msg("Restarting the KDC")
-    krb.restart()
-
     if options.setup_dns:
         install_bind(config, options)
 
-    # Restart httpd to pick up the new IPA configuration
-    service.print_msg("Restarting the web server")
-    http.restart()
+    # Krb, webui and client are not supported on shadow replica
+    if not options.shadow:
+        service.print_msg("Restarting the KDC")
+        krb.restart()
 
-    # Call client install script
-    try:
-        args = ["/usr/sbin/ipa-client-install", "--on-master", "--unattended", "--domain", config.domain_name, "--server", config.host_name, "--realm", config.realm_name]
-        if not options.create_sshfp:
-            args.append("--no-dns-sshfp")
-        if options.trust_sshfp:
-            args.append("--ssh-trust-dns")
-        if not options.conf_sshd:
-            args.append("--no-sshd")
-        ipautil.run(args)
-    except Exception, e:
-        print "Configuration of client side components failed!"
-        print "ipa-client-install returned: " + str(e)
-        raise RuntimeError("Failed to configure the client")
+        # Restart httpd to pick up the new IPA configuration
+        service.print_msg("Restarting the web server")
+        http.restart()
+
+        # Call client install script
+        try:
+            args = ["/usr/sbin/ipa-client-install", "--on-master", "--unattended", "--domain", config.domain_name, "--server", config.host_name, "--realm", config.realm_name]
+            if not options.create_sshfp:
+                args.append("--no-dns-sshfp")
+            if options.trust_sshfp:
+                args.append("--ssh-trust-dns")
+            if not options.conf_sshd:
+                args.append("--no-sshd")
+            ipautil.run(args)
+        except Exception, e:
+            print "Configuration of client side components failed!"
+            print "ipa-client-install returned: " + str(e)
+            raise RuntimeError("Failed to configure the client")
 
     ds.replica_populate()
 
