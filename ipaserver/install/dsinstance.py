@@ -152,7 +152,8 @@ info: IPA V2.0
 """
 
 class DsInstance(service.Service):
-    def __init__(self, realm_name=None, domain_name=None, dm_password=None, fstore=None):
+    def __init__(self, realm_name=None, domain_name=None, dm_password=None,
+                fstore=None, replica_type=replication.MASTER):
         service.Service.__init__(self, "dirsrv", dm_password=dm_password)
         self.realm_name = realm_name
         self.sub_dict = None
@@ -166,6 +167,8 @@ class DsInstance(service.Service):
         self.subject_base = None
         self.open_ports = []
         self.run_init_memberof = True
+        self.replica_type = replica_type
+        self.__add_replica_entry = self.__add_master_entry
         if realm_name:
             self.suffix = ipautil.realm_to_suffix(self.realm_name)
             self.__setup_sub_dict()
@@ -203,7 +206,7 @@ class DsInstance(service.Service):
 
     def __common_post_setup(self):
         self.step("initializing group membership", self.init_memberof)
-        self.step("adding master entry", self.__add_master_entry)
+        self.step("adding replica entry", self.__add_replica_entry)
         self.step("configuring Posix uid/gid generation",
                   self.__config_uidgid_gen)
         self.step("enabling compatibility plugin",
@@ -278,6 +281,11 @@ class DsInstance(service.Service):
         self.step("setting Auto Member configuration", self.__add_replica_automember_config)
         self.step("enabling S4U2Proxy delegation", self.__setup_s4u2proxy)
 
+        if self.replica_type == replication.CONSUMER:
+            self.__add_replica_entry = self.__add_consumer_entry
+        elif self.replica_type == replication.HUB:
+            self.__add_replica_entry = self.__add_hub_entry
+
         self.__common_post_setup()
 
         self.start_creation("Configuring directory server", 60)
@@ -290,7 +298,8 @@ class DsInstance(service.Service):
 
         repl = replication.ReplicationManager(self.realm_name,
                                               self.fqdn,
-                                              self.dm_password)
+                                              self.dm_password,
+                                              replica_type=self.replica_type)
         repl.setup_replication(self.master_fqdn,
                                r_binddn="cn=Directory Manager",
                                r_bindpw=self.dm_password)
@@ -464,6 +473,12 @@ class DsInstance(service.Service):
 
     def __add_master_entry(self):
         self._ldap_mod("master-entry.ldif", self.sub_dict)
+
+    def __add_consumer_entry(self):
+        self._ldap_mod("consumer-entry.ldif", self.sub_dict)
+
+    def __add_hub_entry(self):
+        self._ldap_mod("hub-entry.ldif", self.sub_dict)
 
     def __add_winsync_module(self):
         self._ldap_mod("ipa-winsync-conf.ldif")

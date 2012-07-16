@@ -157,11 +157,11 @@ def install_replica_ds(config, replica_type=MASTER):
         pkcs12_info = (config.dir + "/dscert.p12",
                        config.dir + "/dirsrv_pin.txt")
 
-    ds = dsinstance.DsInstance()
+    ds = dsinstance.DsInstance(replica_type=replica_type)
     ds.create_replica(config.realm_name,
                       config.master_host_name, config.host_name,
                       config.domain_name, config.dirman_password,
-                      pkcs12_info, replica_type)
+                      pkcs12_info)
 
     return ds
 

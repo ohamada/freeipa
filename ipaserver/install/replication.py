@@ -102,7 +102,7 @@ def enable_replication_version_checking(hostname, realm, dirman_passwd):
 class ReplicationManager(object):
     """Manage replication agreements between DS servers, and sync
     agreements with Windows servers"""
-    def __init__(self, realm, hostname, dirman_passwd, port=PORT, starttls=False, conn=None):
+    def __init__(self, realm, hostname, dirman_passwd, port=PORT, starttls=False, conn=None, replica_type=MASTER):
         self.hostname = hostname
         self.port = port
         self.dirman_passwd = dirman_passwd
@@ -111,6 +111,7 @@ class ReplicationManager(object):
         tmp = ipautil.realm_to_suffix(realm)
         self.suffix = str(DN(tmp)).lower()
         self.need_memberof_fixup = False
+        self.replica_type = replica_type
 
         # The caller is allowed to pass in an existing IPAdmin connection.
         # Open a new one if not provided
