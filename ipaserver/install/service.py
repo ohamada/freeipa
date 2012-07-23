@@ -110,7 +110,7 @@ class Service(object):
         if self.dm_password or (user_cn and user_pw):
             [pw_fd, pw_name] = tempfile.mkstemp()
             if user_cn:
-                cn = user_cn
+                cn = "cn=%s" % user_cn
                 os.write(pw_fd, user_pw)
             else:
                 cn = "cn=Directory Manager"
