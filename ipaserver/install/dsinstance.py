@@ -153,7 +153,7 @@ info: IPA V2.0
 
 class DsInstance(service.Service):
     def __init__(self, realm_name=None, domain_name=None, dm_password=None,
-                fstore=None, replica_type=replication.MASTER):
+                fstore=None, replica_type=replication.MASTER, chain_password=None):
         service.Service.__init__(self, "dirsrv", dm_password=dm_password)
         self.realm_name = realm_name
         self.sub_dict = None
@@ -169,6 +169,7 @@ class DsInstance(service.Service):
         self.run_init_memberof = True
         self.replica_type = replica_type
         self.__add_replica_entry = self.__add_master_entry
+        self.chain_password = chain_password
         if realm_name:
             self.suffix = ipautil.realm_to_suffix(self.realm_name)
             self.__setup_sub_dict()
@@ -302,7 +303,9 @@ class DsInstance(service.Service):
                                               replica_type=self.replica_type)
         repl.setup_replication(self.master_fqdn,
                                r_binddn="cn=Directory Manager",
-                               r_bindpw=self.dm_password)
+                               r_bindpw=self.dm_password,
+                               ch_binddn=replication.CHAINING_USER_DN,
+                               ch_bindpw=self.chain_password)
         self.run_init_memberof = repl.needs_memberof_fixup()
 
     def __enable(self):
@@ -475,10 +478,12 @@ class DsInstance(service.Service):
         self._ldap_mod("master-entry.ldif", self.sub_dict)
 
     def __add_consumer_entry(self):
-        self._ldap_mod("consumer-entry.ldif", self.sub_dict)
+        self._ldap_mod("consumer-entry.ldif", self.sub_dict, 
+            user_cn = replication.CHAINING_USER_CN, user_pw = self.chain_password)
 
     def __add_hub_entry(self):
-        self._ldap_mod("hub-entry.ldif", self.sub_dict)
+        self._ldap_mod("hub-entry.ldif", self.sub_dict, 
+            user_cn = replication.CHAINING_USER_CN, user_pw = self.chain_password)
 
     def __add_winsync_module(self):
         self._ldap_mod("ipa-winsync-conf.ldif")
