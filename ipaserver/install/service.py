@@ -88,7 +88,7 @@ class Service(object):
         self.admin_conn.unbind()
         self.admin_conn = None
 
-    def _ldap_mod(self, ldif, sub_dict = None):
+    def _ldap_mod(self, ldif, sub_dict = None, user_cn = None, user_pw = None):
 
         pw_name = None
         fd = None
@@ -107,11 +107,16 @@ class Service(object):
             if sub_dict.has_key('RANDOM_PASSWORD'):
                 nologlist.append(sub_dict['RANDOM_PASSWORD'])
 
-        if self.dm_password:
+        if self.dm_password or (user_cn and user_pw):
             [pw_fd, pw_name] = tempfile.mkstemp()
-            os.write(pw_fd, self.dm_password)
+            if user_cn:
+                cn = user_cn
+                os.write(pw_fd, user_pw)
+            else:
+                cn = "cn=Directory Manager"
+                os.write(pw_fd, self.dm_password)
             os.close(pw_fd)
-            auth_parms = ["-x", "-D", "cn=Directory Manager", "-y", pw_name]
+            auth_parms = ["-x", "-D", cn, "-y", pw_name]
         else:
             auth_parms = ["-Y", "GSSAPI"]
 
