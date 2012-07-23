@@ -1500,6 +1500,21 @@ class BadSearchFilter(ExecutionError):
     errno = 4209
     format = _('Bad search filter %(info)s')
 
+class BadReplicationSetting(ExecutionError):
+    """
+    **4210** Raised when replication is misconfigured
+    
+    For example:
+    
+    >>> raise BadReplicationSetting(info='Can not connect Consumer to Consumer')
+    Traceback (most recent call last):
+      ...
+    Replication config error: Can not connect Consumer to Consumer
+    """
+    
+    errno = 4210
+    format = _("Replication config error: %(info)s")
+
 
 class CertificateError(ExecutionError):
     """
