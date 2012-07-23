@@ -75,3 +75,6 @@ ipapython/setup.py
 ipapython/version.py
 version.m4
 ipapython/services.py
+.project
+.pydevproject
+00*
