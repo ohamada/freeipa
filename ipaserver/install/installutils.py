@@ -527,6 +527,7 @@ def read_replica_info(dir, rconfig):
         rconfig.version = int(config.get("realm", "version"))
     except NoOptionError:
         pass
+    rconfig.replica_type = config.get("general", "replica_type")
 
 def check_server_configuration():
     """

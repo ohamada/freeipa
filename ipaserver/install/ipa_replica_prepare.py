@@ -63,6 +63,8 @@ class ReplicaPrepare(admintool.AdminTool):
         parser.add_option("--ca", dest="ca_file", default="/root/cacert.p12",
             metavar="FILE",
             help="location of CA PKCS#12 file, default /root/cacert.p12")
+        parser.add_option("--readonly", dest="readonly", action="store_true",
+            default=False, help="prepare read-only replica")
 
         group = OptionGroup(parser, "SSL certificate options",
             "Only used if the server was installed using custom SSL certificates")
@@ -275,7 +277,8 @@ class ReplicaPrepare(admintool.AdminTool):
                 "Creating SSL certificate for the Directory Server")
             self.export_certdb("dscert", passwd_fname)
 
-        if not certs.ipa_self_signed():
+        # Dogtag should not be available on RO replicas
+        if not certs.ipa_self_signed() and not options.readonly:
             self.log.info(
                 "Creating SSL certificate for the dogtag Directory Server")
             self.export_certdb("dogtagcert", passwd_fname)
@@ -338,6 +341,7 @@ class ReplicaPrepare(admintool.AdminTool):
             self.copy_info_file(cacert_filename, "cacert.pem")
 
     def save_config(self):
+        options = self.options
         self.log.info("Finalizing configuration")
 
         config = SafeConfigParser()
@@ -348,6 +352,9 @@ class ReplicaPrepare(admintool.AdminTool):
         config.set("realm", "destination_host", self.replica_fqdn)
         config.set("realm", "subject_base", str(self.subject_base))
         config.set("realm", "version", str(version.NUM_VERSION))
+
+        config.add_section("general")
+        config.set("general", "replica_type", "consumer" if options.readonly else "master")
 
         with open(os.path.join(self.dir, "realm_info"), "w") as fd:
             config.write(fd)
