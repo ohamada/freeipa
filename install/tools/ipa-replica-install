@@ -158,7 +158,7 @@ def install_replica_ds(config):
     ds.create_replica(config.realm_name,
                       config.master_host_name, config.host_name,
                       config.domain_name, config.dirman_password,
-                      pkcs12_info)
+                      pkcs12_info, config.replica_type)
 
     return ds
 
@@ -492,6 +492,16 @@ def main():
             sys.exit(0)
     config.dir = dir
     config.setup_ca = options.setup_ca
+
+    if config.setup_ca and not config.replica_type == "master":
+        try:
+            print "This replica is read-only and does not support CA"
+            if not ipautil.user_input("CA will not be installed. Continue?", False):
+                sys.exit(0)
+            config.setup_ca = False
+            print ""
+        except KeyboardInterrupt:
+            sys.exit(0)
 
     installutils.verify_fqdn(config.master_host_name, options.no_host_dns)
 

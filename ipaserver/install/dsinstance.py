@@ -268,7 +268,8 @@ class DsInstance(service.Service):
         self.start_creation(runtime=60)
 
     def create_replica(self, realm_name, master_fqdn, fqdn,
-                       domain_name, dm_password, pkcs12_info=None):
+                       domain_name, dm_password, pkcs12_info=None,
+                       replica_type="master"):
         # idstart and idmax are configured so that the range is seen as
         # depleted by the DNA plugin and the replica will go and get a
         # new range from the master.

@@ -75,6 +75,7 @@ class ReplicaConfig:
         self.subject_base = None
         self.setup_ca = False
         self.version = 0
+        self.replica_type = ""
 
     subject_base = ipautil.dn_attribute_property('_subject_base')
 
