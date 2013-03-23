@@ -174,7 +174,7 @@ def wait_for_entry(connection, entry, timeout=7200, attr='', quiet=True):
 class ReplicationManager(object):
     """Manage replication agreements between DS servers, and sync
     agreements with Windows servers"""
-    def __init__(self, realm, hostname, dirman_passwd, port=PORT, starttls=False, conn=None):
+    def __init__(self, realm, hostname, dirman_passwd, port=PORT, starttls=False, conn=None, repl_type="master"):
         self.hostname = hostname
         self.port = port
         self.dirman_passwd = dirman_passwd
@@ -182,6 +182,7 @@ class ReplicationManager(object):
         self.starttls = starttls
         self.suffix = ipautil.realm_to_suffix(realm)
         self.need_memberof_fixup = False
+        self.repl_type = repl_type
 
         # The caller is allowed to pass in an existing IPAdmin connection.
         # Open a new one if not provided

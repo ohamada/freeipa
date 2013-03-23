@@ -226,7 +226,8 @@ class DsInstance(service.Service):
         self.step("configuring directory to start on boot", self.__enable)
 
     def init_info(self, realm_name, fqdn, domain_name, dm_password,
-                  self_signed_ca, subject_base, idstart, idmax, pkcs12_info):
+                  self_signed_ca, subject_base, idstart, idmax, pkcs12_info,
+                  replica_type="master"):
         self.realm_name = realm_name.upper()
         self.serverid = realm_to_serverid(self.realm_name)
         self.suffix = ipautil.realm_to_suffix(self.realm_name)
@@ -239,6 +240,7 @@ class DsInstance(service.Service):
         self.idstart = idstart
         self.idmax = idmax
         self.pkcs12_info = pkcs12_info
+        self.replica_type = replica_type
 
         self.__setup_sub_dict()
 
@@ -279,7 +281,7 @@ class DsInstance(service.Service):
 
         self.init_info(
             realm_name, fqdn, domain_name, dm_password, None, None,
-            idstart, idmax, pkcs12_info)
+            idstart, idmax, pkcs12_info, replica_type)
         self.master_fqdn = master_fqdn
 
         self.__common_setup(True)
@@ -301,7 +303,8 @@ class DsInstance(service.Service):
 
         repl = replication.ReplicationManager(self.realm_name,
                                               self.fqdn,
-                                              self.dm_password)
+                                              self.dm_password,
+                                              repl_type=self.replica_type)
         repl.setup_replication(self.master_fqdn,
                                r_binddn=DN(('cn', 'Directory Manager')),
                                r_bindpw=self.dm_password)
