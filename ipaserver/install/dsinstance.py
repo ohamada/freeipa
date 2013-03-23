@@ -215,7 +215,10 @@ class DsInstance(service.Service):
 
     def __common_post_setup(self):
         self.step("initializing group membership", self.init_memberof)
-        self.step("adding master entry", self.__add_master_entry)
+        if not self.replica_type == "consumer":
+            self.step("adding master entry", self.__add_master_entry)
+        else:
+            self.step("adding consumer entry", self.__add_consumer_entry)
         self.step("configuring Posix uid/gid generation",
                   self.__config_uidgid_gen)
         self.step("adding replication acis", self.__add_replication_acis)
@@ -484,6 +487,9 @@ class DsInstance(service.Service):
 
     def __add_master_entry(self):
         self._ldap_mod("master-entry.ldif", self.sub_dict)
+
+    def __add_consumer_entry(self):
+        self._ldap_mod("consumer-entry.ldif", self.sub_dict)
 
     def __add_winsync_module(self):
         self._ldap_mod("ipa-winsync-conf.ldif")

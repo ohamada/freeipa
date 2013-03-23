@@ -41,6 +41,7 @@ app_DATA =				\
 	referint-conf.ldif		\
 	dna.ldif			\
 	master-entry.ldif		\
+	consumer-entry.ldif		\
 	memberof-task.ldif		\
 	memberof-conf.ldif		\
 	nis.uldif			\
