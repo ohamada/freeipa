@@ -42,6 +42,8 @@ DNA_DN = DN(('cn', 'Posix IDs'), ('cn', 'Distributed Numeric Assignment Plugin')
 IPA_REPLICA = 1
 WINSYNC = 2
 
+CONSUMER_ID = 65535
+
 # List of attributes that need to be excluded from replication initialization.
 TOTAL_EXCLUDES = ('entryusn',
                  'krblastsuccessfulauth',
@@ -382,6 +384,19 @@ class ReplicationManager(object):
         else:
             return "2"
 
+    def get_replica_flags(self, master=True):
+        if master:
+            return "1"
+        else:
+            return "0"
+
+    def get_replica_attributes(self, replica_id):
+        is_master = True if not replica_id == CONSUMER_ID else False
+
+        replica_type = self.get_replica_type(is_master)
+        flags = self.get_replica_flags(is_master)
+        return (replica_type, flags)
+
     def replica_dn(self):
         return DN(('cn','replica'),('cn',self.suffix),('cn','mapping tree'),('cn','config'))
 
@@ -405,7 +420,7 @@ class ReplicationManager(object):
         except errors.NotFound:
             pass
 
-        replica_type = self.get_replica_type()
+        (replica_type, replica_flags) = self.get_replica_attributes(replica_id)
 
         entry = conn.make_entry(
             dn,
@@ -414,7 +429,7 @@ class ReplicationManager(object):
             nsds5replicaroot=[str(self.suffix)],
             nsds5replicaid=[str(replica_id)],
             nsds5replicatype=[replica_type],
-            nsds5flags=["1"],
+            nsds5flags=[replica_flags],
             nsds5replicabinddn=[replica_binddn],
             nsds5replicalegacyconsumer=["off"],
         )
@@ -908,7 +923,9 @@ class ReplicationManager(object):
         if replpw is not None:
             self.add_replication_manager(conn, repldn, replpw)
         self.replica_config(conn, replica_id, repldn)
-        self.setup_changelog(conn)
+        # setup changelog only on master replica
+        if not replica_id == CONSUMER_ID:
+            self.setup_changelog(conn)
 
     def setup_replication(self, r_hostname, r_port=389, r_sslport=636,
                           r_binddn=None, r_bindpw=None,
@@ -928,14 +945,16 @@ class ReplicationManager(object):
             r_conn.do_sasl_gssapi_bind()
 
         #Setup the first half
-        l_id = self._get_replica_id(self.conn, r_conn)
+        l_id = self._get_replica_id(self.conn, r_conn) if self.repl_type == "master" else CONSUMER_ID
         self.basic_replication_setup(self.conn, l_id,
                                      self.repl_man_dn, self.repl_man_passwd)
 
         # Now setup the other half
+        # Create replication manager account only for master-master replication
         r_id = self._get_replica_id(r_conn, r_conn)
         self.basic_replication_setup(r_conn, r_id,
-                                     self.repl_man_dn, self.repl_man_passwd)
+                                     self.repl_man_dn,
+                                     self.repl_man_passwd if l_id == CONSUMER_ID else None)
 
         if is_cs_replica:
             self.setup_agreement(r_conn, self.conn.host, port=local_port,
@@ -950,9 +969,10 @@ class ReplicationManager(object):
             self.setup_agreement(r_conn, self.conn.host, port=local_port,
                                  repl_man_dn=self.repl_man_dn,
                                  repl_man_passwd=self.repl_man_passwd)
-            self.setup_agreement(self.conn, r_hostname, port=r_port,
-                                 repl_man_dn=self.repl_man_dn,
-                                 repl_man_passwd=self.repl_man_passwd)
+            if not l_id == CONSUMER_ID:
+                self.setup_agreement(self.conn, r_hostname, port=r_port,
+                                     repl_man_dn=self.repl_man_dn,
+                                     repl_man_passwd=self.repl_man_passwd)
 
         #Finally start replication
         ret = self.start_replication(r_conn, master=False)
