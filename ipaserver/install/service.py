@@ -164,10 +164,19 @@ class Service(object):
         args += auth_parms
 
         try:
-            try:
-                ipautil.run(args, nolog=nologlist)
-            except ipautil.CalledProcessError, e:
-                root_logger.critical("Failed to load %s: %s" % (ldif, str(e)))
+            (stdo,stde,errc) = ipautil.run(args, raiseonerr=False, nolog=nologlist)
+            # referral returned
+            while errc == 10:
+                # parse the first referral address from the output
+                clean_stde = stde.replace("\t","").split("\n")
+                referral_addr = clean_stde[clean_stde.index("referrals:") + 1]
+                host_arg_pos = args.index("-H") + 1
+                if not referral_addr:
+                    break
+                args[host_arg_pos] = referral_addr
+                (stdo,stde,errc) = ipautil.run(args, raiseonerr=False, nolog=nologlist)
+            if errc:
+                root_logger.critical("Failed to load %s: %s" % (ldif, ' '.join(args + nologlist)))
         finally:
             if pw_name:
                 os.remove(pw_name)
