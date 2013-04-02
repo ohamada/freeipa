@@ -158,11 +158,12 @@ class KrbInstance(service.Service):
         self.step("starting the KDC", self.__start_instance)
         self.step("configuring KDC to start on boot", self.__enable)
 
-    def create_instance(self, realm_name, host_name, domain_name, admin_password, master_password, setup_pkinit=False, pkcs12_info=None, self_signed_ca=False, subject_base=None):
+    def create_instance(self, realm_name, host_name, domain_name, admin_password, master_password, setup_pkinit=False, pkcs12_info=None, self_signed_ca=False, subject_base=None, replica_type="master"):
         self.master_password = master_password
         self.pkcs12_info = pkcs12_info
         self.self_signed_ca = self_signed_ca
         self.subject_base = subject_base
+        self.replica_type = replica_type
 
         self.__common_setup(realm_name, host_name, domain_name, admin_password)
 
@@ -189,11 +190,13 @@ class KrbInstance(service.Service):
                        master_fqdn, host_name,
                        domain_name, admin_password,
                        setup_pkinit=False, pkcs12_info=None,
-                       self_signed_ca=False, subject_base=None):
+                       self_signed_ca=False, subject_base=None,
+                       replica_type="master"):
         self.pkcs12_info = pkcs12_info
         self.self_signed_ca = self_signed_ca
         self.subject_base = subject_base
         self.master_fqdn = master_fqdn
+        self.replica_type = replica_type
 
         self.__common_setup(realm_name, host_name, domain_name, admin_password)
 
@@ -230,6 +233,7 @@ class KrbInstance(service.Service):
 
     def __setup_sub_dict(self):
         self.sub_dict = dict(FQDN=self.fqdn,
+                             MASTER=self.fqdn if self.replica_type == "master" else self.master_fqdn,
                              IP=self.ip,
                              PASSWORD=self.kdc_password,
                              SUFFIX=self.suffix,

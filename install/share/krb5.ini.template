@@ -6,9 +6,9 @@
 
 [realms]
         $REALM = {
-                admin_server = $FQDN
+                admin_server = $MASTER
                 kdc = $FQDN
-                master_kdc = $FQDN
+                master_kdc = $MASTER
                 default_domain = $REALM
         }
 
