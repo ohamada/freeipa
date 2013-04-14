@@ -36,7 +36,6 @@ from ipapython import version
 from ipalib import api
 from ipalib import errors
 
-
 class ReplicaPrepare(admintool.AdminTool):
     command_name = 'ipa-replica-prepare'
 
@@ -236,6 +235,9 @@ class ReplicaPrepare(admintool.AdminTool):
         self.dir = os.path.join(self.top_dir, "realm_info")
         os.mkdir(self.dir, 0700)
         try:
+            self.add_replica_host()
+            self.create_principals()
+
             self.copy_ds_certificate()
 
             self.copy_httpd_certificate()
@@ -509,3 +511,60 @@ class ReplicaPrepare(admintool.AdminTool):
                 db.export_pkcs12(pkcs12_fname, agent_name, "ipaCert")
         finally:
             os.remove(agent_name)
+
+    def add_replica_host(self):
+        options = self.options
+        try:
+            ipautil.run(["ipa", "host-add", "--force", self.replica_fqdn])
+            ipautil.run(["ipa-getkeytab", "--server", api.env.host,
+                         "--principal", "host/%s@%s" % (self.replica_fqdn, api.env.realm),
+                         "-k", self.dir + "/krb5.keytab"])
+        except ipautil.CalledProcessError, err:
+            ipautil.run(["ipa", "host-del", "--force", self.replica_fqdn], raiseonerr=False)
+            raise admintool.ScriptError(str(err))
+
+    def create_principals(self):
+        def remove_principals(principals):
+            for principal in principals:
+                try:
+                    ipautil.run(["ipa", "service-del", "--force", principal])
+                except ipautil.CalledProcessError, err:
+                    pass
+
+        def remove_keytab_files(principals):
+            for principal in principals:
+                if ipautil.file_exists(principals[principal]):
+                    installutils.remove_file(self.dir + "/%s.keytab" % principals[principal])
+
+        options = self.options
+        services = { 'ldap' : 'ds', 'HTTP' : 'http' }
+        principals = {}
+        err = None
+
+        # generate dictionary 'full principal name' : 'full path to keytab'
+        for service in services:
+            keytab_file = self.dir + u'/%s.keytab' % services[service]
+            principal = u'%s/%s@%s' % (service, self.replica_fqdn, api.env.realm)
+            principals[principal] = keytab_file
+
+            try:
+                ipautil.run(["ipa", "service-add", principal])
+                ipautil.run(["ipa-getkeytab", "--server", api.env.host,
+                                          "--principal", principal,
+                                          "-k", keytab_file])
+
+            # some other error that occured during service-add, remove already added services
+            except ipautil.CalledProcessError, err:
+                break
+
+        # exception was raised
+        if err:
+            remove_principals(principals)
+            remove_keytab_files(principals)
+            #remove host
+            if ipautil.file_exists(self.dir + "/krb5.keytab"):
+                installutils.remove_file(self.dir + "/krb5.keytab")
+            api.Command['host_del'](unicode(self.replica_fqdn), force=True)
+            admintool.ScriptError(str(err))
+
+

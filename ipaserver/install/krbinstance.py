@@ -191,20 +191,29 @@ class KrbInstance(service.Service):
                        domain_name, admin_password,
                        setup_pkinit=False, pkcs12_info=None,
                        self_signed_ca=False, subject_base=None,
-                       replica_type="master"):
+                       replica_type="master", ds_keytab=None,
+                       host_keytab=None):
         self.pkcs12_info = pkcs12_info
         self.self_signed_ca = self_signed_ca
         self.subject_base = subject_base
         self.master_fqdn = master_fqdn
         self.replica_type = replica_type
+        self.ds_keytab = ds_keytab
+        self.host_keytab = host_keytab
 
         self.__common_setup(realm_name, host_name, domain_name, admin_password)
 
         self.step("adding sasl mappings to the directory", self.__configure_sasl_mappings)
         self.step("writing stash file from DS", self.__write_stash_from_ds)
         self.step("configuring KDC", self.__configure_instance)
-        self.step("creating a keytab for the directory", self.__create_ds_keytab)
-        self.step("creating a keytab for the machine", self.__create_host_keytab)
+        if self.ds_keytab:
+            self.step("creating a keytab for the directory", self.__copy_ds_keytab)
+        else:
+            self.step("creating a keytab for the directory", self.__create_ds_keytab)
+        if self.host_keytab:
+            self.step("creating a keytab for the machine", self.__copy_host_keytab)
+        else:
+            self.step("creating a keytab for the machine", self.__create_host_keytab)
         self.step("adding the password extension to the directory", self.__add_pwd_extop_module)
         if setup_pkinit:
             self.step("installing X509 Certificate for PKINIT", self.__setup_pkinit)
@@ -402,6 +411,14 @@ class KrbInstance(service.Service):
         pent = pwd.getpwnam(dsinstance.DS_USER)
         os.chown("/etc/dirsrv/ds.keytab", pent.pw_uid, pent.pw_gid)
 
+    def __copy_ds_keytab(self):
+        self.fstore.backup_file("/etc/dirsrv/ds.keytab")
+        shutil.copy(self.ds_keytab, "/etc/dirsrv/ds.keytab")
+        update_key_val_in_file("/etc/sysconfig/dirsrv", "KRB5_KTNAME", "/etc/dirsrv/ds.keytab")
+        update_key_val_in_file("/etc/sysconfig/dirsrv", "export KRB5_KTNAME", "/etc/dirsrv/ds.keytab")
+        pent = pwd.getpwnam(dsinstance.DS_USER)
+        os.chown("/etc/dirsrv/ds.keytab", pent.pw_uid, pent.pw_gid)
+
     def __create_host_keytab(self):
         host_principal = "host/" + self.fqdn + "@" + self.realm
         installutils.kadmin_addprinc(host_principal)
@@ -414,6 +431,13 @@ class KrbInstance(service.Service):
         os.chmod("/etc/krb5.keytab", 0600)
 
         self.move_service_to_host(host_principal)
+
+    def __copy_host_keytab(self):
+        self.fstore.backup_file("/etc/krb5.keytab")
+        shutil.copy(self.host_keytab, "/etc/krb5.keytab")
+        # Make sure access is strictly reserved to root only for now
+        os.chown("/etc/krb5.keytab", 0, 0)
+        os.chmod("/etc/krb5.keytab", 0600)
 
     def __setup_pkinit(self):
         if self.self_signed_ca:
@@ -452,7 +476,8 @@ class KrbInstance(service.Service):
     def __convert_to_gssapi_replication(self):
         repl = replication.ReplicationManager(self.realm,
                                               self.fqdn,
-                                              self.dm_password)
+                                              self.dm_password,
+                                              repl_type=self.replica_type)
         repl.convert_to_gssapi_replication(self.master_fqdn,
                                            r_binddn=DN(('cn', 'Directory Manager')),
                                            r_bindpw=self.dm_password)

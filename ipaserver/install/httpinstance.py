@@ -59,7 +59,7 @@ class HTTPInstance(service.Service):
 
     subject_base = ipautil.dn_attribute_property('_subject_base')
 
-    def create_instance(self, realm, fqdn, domain_name, dm_password=None, autoconfig=True, pkcs12_info=None, self_signed_ca=False, subject_base=None, auto_redirect=True):
+    def create_instance(self, realm, fqdn, domain_name, dm_password=None, autoconfig=True, pkcs12_info=None, self_signed_ca=False, subject_base=None, auto_redirect=True, http_keytab=None):
         self.fqdn = fqdn
         self.realm = realm
         self.domain = domain_name
@@ -70,6 +70,7 @@ class HTTPInstance(service.Service):
         self.principal = "HTTP/%s@%s" % (self.fqdn, self.realm)
         self.dercert = None
         self.subject_base = subject_base
+        self.http_keytab = http_keytab
         self.sub_dict = dict(
             REALM=realm,
             FQDN=fqdn,
@@ -92,7 +93,10 @@ class HTTPInstance(service.Service):
         if autoconfig:
             self.step("setting up browser autoconfig", self.__setup_autoconfig)
         self.step("publish CA cert", self.__publish_ca_cert)
-        self.step("creating a keytab for httpd", self.__create_http_keytab)
+        if self.http_keytab:
+            self.step("creating a keytab for httpd", self.__copy_http_keytab)
+        else:
+            self.step("creating a keytab for httpd", self.__create_http_keytab)
         self.step("clean up any existing httpd ccache", self.remove_httpd_ccache)
         self.step("configuring SELinux for httpd", self.configure_selinux_for_httpd)
         self.step("restarting httpd", self.__start)
@@ -180,6 +184,12 @@ class HTTPInstance(service.Service):
         self.move_service(self.principal)
         self.add_cert_to_service()
 
+        pent = pwd.getpwnam("apache")
+        os.chown("/etc/httpd/conf/ipa.keytab", pent.pw_uid, pent.pw_gid)
+
+    def __copy_http_keytab(self):
+        shutil.copy(self.http_keytab, "/etc/httpd/conf/ipa.keytab")
+        self.add_cert_to_service()
         pent = pwd.getpwnam("apache")
         os.chown("/etc/httpd/conf/ipa.keytab", pent.pw_uid, pent.pw_gid)
 
