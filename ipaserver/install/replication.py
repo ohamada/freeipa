@@ -39,6 +39,7 @@ TIMEOUT = 120
 REPL_MAN_DN = DN(('cn', 'replication manager'), ('cn', 'config'))
 DNA_DN = DN(('cn', 'Posix IDs'), ('cn', 'Distributed Numeric Assignment Plugin'), ('cn', 'plugins'), ('cn', 'config'))
 
+CHAINING = 1
 IPA_REPLICA = 1
 WINSYNC = 2
 
@@ -983,6 +984,9 @@ class ReplicationManager(object):
         ret = self.start_replication(r_conn, master=False)
         if ret != 0:
             raise RuntimeError("Failed to start replication")
+
+        if CHAINING and self.repl_type == "consumer":
+            self.setup_chain_on_update(r_conn)
 
     def setup_winsync_replication(self,
                                   ad_dc_name, ad_binddn, ad_pwd,
