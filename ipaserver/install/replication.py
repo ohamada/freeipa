@@ -534,6 +534,7 @@ class ReplicationManager(object):
             root_logger.debug("chainOnUpdate already enabled for %s" % self.suffix)
 
     def setup_chain_on_update(self, other_conn):
+        self.setup_chaining_farm(other_conn)
         chainbe = self.setup_chaining_backend(other_conn)
         self.enable_chain_on_update(chainbe)
 
