@@ -767,8 +767,9 @@ class ReplicationManager(object):
                (ldap.MOD_DELETE, "nsds5replicabinddn", None),
                (ldap.MOD_DELETE, "nsds5replicacredentials", None)]
 
-        cn, a_ag_dn = self.agreement_dn(b.host)
-        a.modify_s(a_ag_dn, mod)
+        if self.repl_type == "master":
+            cn, a_ag_dn = self.agreement_dn(b.host)
+            a.modify_s(a_ag_dn, mod)
 
         cn, b_ag_dn = self.agreement_dn(a.host)
         b.modify_s(b_ag_dn, mod)
@@ -1056,9 +1057,10 @@ class ReplicationManager(object):
         # First off make sure servers are in sync so that both KDCs
         # have all principals and their passwords and can release
         # the right tickets. We do this by force pushing all our changes
-        self.force_sync(self.conn, r_hostname)
-        cn, dn = self.agreement_dn(r_hostname)
-        self.wait_for_repl_update(self.conn, dn, 300)
+        if self.repl_type == "master":
+            self.force_sync(self.conn, r_hostname)
+            cn, dn = self.agreement_dn(r_hostname)
+            self.wait_for_repl_update(self.conn, dn, 300)
 
         # now in the opposite direction
         self.force_sync(r_conn, self.hostname)
@@ -1199,8 +1201,13 @@ class ReplicationManager(object):
 
         # delete master entry with all active services
         try:
-            dn = DN(('cn', replica), ('cn', 'masters'), ('cn', 'ipa'),
-                    ('cn', 'etc'), self.suffix)
+            try:
+                dn = DN(('cn', replica), ('cn', 'masters'), ('cn', 'ipa'),
+                        ('cn', 'etc'), self.suffix)
+            except errors.NotFound:
+                dn = DN(('cn', replica), ('cn', 'consumers'), ('cn', 'ipa'),
+                        ('cn', 'etc'), self.suffix)
+
             entries = self.conn.get_entries(dn, ldap.SCOPE_SUBTREE)
             if entries:
                 entries.sort(key=len, reverse=True)
