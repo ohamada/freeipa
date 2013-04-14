@@ -80,6 +80,8 @@ class Service(object):
         self.principal = None
         self.dercert = None
 
+        self.repl_type = None
+
     def ldap_connect(self):
         # If DM password is provided, we use it
         # If autobind was requested, attempt autobind when root and ldapi
@@ -381,7 +383,11 @@ class Service(object):
         if not self.admin_conn:
             self.ldap_connect()
 
-        entry_name = DN(('cn', name), ('cn', fqdn), ('cn', 'masters'), ('cn', 'ipa'), ('cn', 'etc'), ldap_suffix)
+        server_group = "masters"
+        if self.repl_type == "consumer":
+            server_group = "consumers"
+
+        entry_name = DN(('cn', name), ('cn', fqdn), ('cn', server_group), ('cn', 'ipa'), ('cn', 'etc'), ldap_suffix)
         order = SERVICE_LIST[name][1]
         entry = self.admin_conn.make_entry(
             entry_name,
