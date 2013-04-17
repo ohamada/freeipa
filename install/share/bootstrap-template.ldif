@@ -147,7 +147,7 @@ dn: cn=consumers,cn=ipa,cn=etc,$SUFFIX
 changetype: add
 objectClass: nsContainer
 objectClass: top
-cn: masters
+cn: consumers
 
 dn: cn=replicas,cn=ipa,cn=etc,$SUFFIX
 changetype: add
