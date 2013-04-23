@@ -50,6 +50,9 @@ SERVICE_LIST = {
     'EXTID':('winbind', 70)
 }
 
+# Maximal number of hops allowed for referral following
+REFERRAL_CNT = 10
+
 def print_msg(message, output_fd=sys.stdout):
     root_logger.debug(message)
     output_fd.write(message)
@@ -168,7 +171,8 @@ class Service(object):
         try:
             (stdo,stde,errc) = ipautil.run(args, raiseonerr=False, nolog=nologlist)
             # referral returned
-            while errc == 10:
+            ref_cnt = REFERRAL_CNT
+            while errc == 10 and ref_cnt:
                 # parse the first referral address from the output
                 clean_stde = stde.replace("\t","").split("\n")
                 referral_addr = clean_stde[clean_stde.index("referrals:") + 1]
@@ -177,8 +181,12 @@ class Service(object):
                     break
                 args[host_arg_pos] = referral_addr
                 (stdo,stde,errc) = ipautil.run(args, raiseonerr=False, nolog=nologlist)
+                ref_cnt -= 1
             if errc:
-                root_logger.critical("Failed to load %s: %s" % (ldif, ' '.join(args + nologlist)))
+                if not ref_cnt:
+                    root_logger.critical("Failed to load %s: Too many referrals" % ldif)
+                else:
+                    root_logger.critical("Failed to load %s: %s" % (ldif, ' '.join(args + nologlist)))
         finally:
             if pw_name:
                 os.remove(pw_name)
