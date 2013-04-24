@@ -200,6 +200,8 @@ class KrbInstance(service.Service):
         self.replica_type = replica_type
         self.ds_keytab = ds_keytab
         self.host_keytab = host_keytab
+        
+        self._set_service_location(self.replica_type)
 
         self.__common_setup(realm_name, host_name, domain_name, admin_password)
 

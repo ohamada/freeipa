@@ -59,7 +59,7 @@ class HTTPInstance(service.Service):
 
     subject_base = ipautil.dn_attribute_property('_subject_base')
 
-    def create_instance(self, realm, fqdn, domain_name, dm_password=None, autoconfig=True, pkcs12_info=None, self_signed_ca=False, subject_base=None, auto_redirect=True, http_keytab=None):
+    def create_instance(self, realm, fqdn, domain_name, dm_password=None, autoconfig=True, pkcs12_info=None, self_signed_ca=False, subject_base=None, auto_redirect=True, http_keytab=None, replica_type="master", master_fqdn=None):
         self.fqdn = fqdn
         self.realm = realm
         self.domain = domain_name
@@ -78,6 +78,10 @@ class HTTPInstance(service.Service):
             AUTOREDIR='' if auto_redirect else '#',
             CRL_PUBLISH_PATH=dogtag.install_constants.CRL_PUBLISH_PATH,
         )
+        self.replica_type = replica_type
+        self.master_fqdn = master_fqdn
+        
+        self._set_service_location(self.replica_type)
 
         # get a connection to the DS
         self.ldap_connect()

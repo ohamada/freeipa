@@ -53,6 +53,9 @@ SERVICE_LIST = {
 # Maximal number of hops allowed for referral following
 REFERRAL_CNT = 10
 
+LDAP_ERR_REFERRAL = 10
+LDAP_UNWILLING_TO_PERFORM = 53 
+
 def print_msg(message, output_fd=sys.stdout):
     root_logger.debug(message)
     output_fd.write(message)
@@ -60,7 +63,7 @@ def print_msg(message, output_fd=sys.stdout):
 
 
 class Service(object):
-    def __init__(self, service_name, service_desc=None, sstore=None, dm_password=None, ldapi=True, autobind=AUTO):
+    def __init__(self, service_name, service_desc=None, sstore=None, dm_password=None, ldapi=True, autobind=AUTO, on_master=True, master_fqdn=None):
         self.service_name = service_name
         self.service_desc = service_desc
         self.service = ipaservices.service(service_name)
@@ -69,9 +72,14 @@ class Service(object):
         self.dm_password = dm_password
         self.ldapi = ldapi
         self.autobind = autobind
-
+        
+        self.on_master = True
+        self.master_fqdn = None
+        
         self.fqdn = socket.gethostname()
         self.admin_conn = None
+        
+        self.master_conn = None
 
         if sstore:
             self.sstore = sstore
@@ -84,6 +92,15 @@ class Service(object):
         self.dercert = None
 
         self.repl_type = None
+
+    def _set_service_location(self, server_type="master"):
+        if server_type != "master":
+            self.on_master = False
+        if not self.on_master:
+            if self.master_fqdn is None:
+                raise errors.NotFound(reason="missing master fqdn")
+            if self.dm_password is None:
+                raise errors.NotFound(reason="missing Directory Manager password for master")
 
     def ldap_connect(self):
         # If DM password is provided, we use it
@@ -123,11 +140,24 @@ class Service(object):
             raise
 
         self.admin_conn = conn
-
+        
+        if not self.on_master:
+            try:
+                master_conn = ipaldap.IPAdmin(self.master_fqdn, port=389)
+                master_conn.do_simple_bind(bindpw=self.dm_password)
+            except Exception, e:
+                root_logger.debug("Could not connect to the Directory Server on %s: %s" % (self.master_fqdn, str(e)))
+                raise
+    
+            self.master_conn = master_conn
+                
 
     def ldap_disconnect(self):
         self.admin_conn.unbind()
         self.admin_conn = None
+        if not self.master_conn is None:
+            self.master_conn.unbind()
+            self.master_conn = None
 
     def _ldap_mod(self, ldif, sub_dict = None):
 
@@ -147,13 +177,13 @@ class Service(object):
             if sub_dict.has_key('RANDOM_PASSWORD'):
                 nologlist.append(sub_dict['RANDOM_PASSWORD'])
 
-        args = ["/usr/bin/ldapmodify", "-v", "-f", path]
+        temp_args = ["/usr/bin/ldapmodify", "-v", "-f", path]
 
         # As we always connect to the local host,
         # use URI of admin connection
         if not self.admin_conn:
             self.ldap_connect()
-        args += ["-H", self.admin_conn.ldap_uri]
+        arg_conn_uri = ["-H", self.admin_conn.ldap_uri]
 
         auth_parms = []
         if self.dm_password:
@@ -166,27 +196,35 @@ class Service(object):
             if os.getegid() != 0:
                 auth_parms = ["-Y", "GSSAPI"]
 
-        args += auth_parms
+        temp_args += auth_parms
+        args = temp_args + arg_conn_uri
 
         try:
             (stdo,stde,errc) = ipautil.run(args, raiseonerr=False, nolog=nologlist)
-            # referral returned
-            ref_cnt = REFERRAL_CNT
-            while errc == 10 and ref_cnt:
-                # parse the first referral address from the output
-                clean_stde = stde.replace("\t","").split("\n")
-                referral_addr = clean_stde[clean_stde.index("referrals:") + 1]
-                host_arg_pos = args.index("-H") + 1
-                if not referral_addr:
-                    break
-                args[host_arg_pos] = referral_addr
-                (stdo,stde,errc) = ipautil.run(args, raiseonerr=False, nolog=nologlist)
-                ref_cnt -= 1
-            if errc:
-                if not ref_cnt:
-                    root_logger.critical("Failed to load %s: Too many referrals" % ldif)
-                else:
-                    root_logger.critical("Failed to load %s: %s" % (ldif, ' '.join(args + nologlist)))
+            if not self.on_master:
+                # referral returned
+                ref_cnt = REFERRAL_CNT
+                while errc == LDAP_ERR_REFERRAL and ref_cnt and not self.on_master:
+                    # parse the first referral address from the output
+                    clean_stde = stde.replace("\t","").split("\n")
+                    referral_addr = clean_stde[clean_stde.index("referrals:") + 1]
+                    if not referral_addr:
+                        break
+                    args = temp_args + ["-H", referral_addr]
+                    (stdo,stde,errc) = ipautil.run(args, raiseonerr=False, nolog=nologlist)
+                    ref_cnt -= 1
+
+                # unwilling to perform - Directory Manager account is trying to write
+                # to the linked database. Do the write directly on that DB instead 
+                if errc == LDAP_UNWILLING_TO_PERFORM:
+                    args = temp_args + ["-H", self.master_conn.ldap_uri]
+                    (stdo,stde,errc) = ipautil.run(args, raiseonerr=False, nolog=nologlist)
+
+                if errc:
+                    if not ref_cnt:
+                        root_logger.critical("Failed to load %s: Too many referrals" % ldif)
+                    else:
+                        root_logger.critical("Failed to load %s: %s" % (ldif, ' '.join(args + nologlist)))
         finally:
             if pw_name:
                 os.remove(pw_name)
@@ -199,24 +237,25 @@ class Service(object):
         Used to move a principal entry created by kadmin.local from
         cn=kerberos to cn=services
         """
+        conn = self.admin_conn if self.on_master else self.master_conn
 
         dn = DN(('krbprincipalname', principal), ('cn', self.realm), ('cn', 'kerberos'), self.suffix)
         try:
-            entry = self.admin_conn.get_entry(dn)
+            entry = conn.get_entry(dn)
         except errors.NotFound:
             # There is no service in the wrong location, nothing to do.
             # This can happen when installing a replica
             return None
         newdn = DN(('krbprincipalname', principal), ('cn', 'services'), ('cn', 'accounts'), self.suffix)
         hostdn = DN(('fqdn', self.fqdn), ('cn', 'computers'), ('cn', 'accounts'), self.suffix)
-        self.admin_conn.delete_entry(entry)
+        conn.delete_entry(entry)
         entry.dn = newdn
         classes = entry.get("objectclass")
         classes = classes + ["ipaobject", "ipaservice", "pkiuser"]
         entry["objectclass"] = list(set(classes))
         entry["ipauniqueid"] = ['autogenerate']
         entry["managedby"] = [hostdn]
-        self.admin_conn.add_entry(entry)
+        conn.add_entry(entry)
         return newdn
 
     def add_simple_service(self, principal):
@@ -225,12 +264,14 @@ class Service(object):
 
         The principal needs to be fully-formed: service/host@REALM
         """
-        if not self.admin_conn:
+        conn = self.admin_conn if self.on_master else self.master_conn
+        if not conn:
             self.ldap_connect()
+        conn = self.admin_conn if self.on_master else self.master_conn
 
         dn = DN(('krbprincipalname', principal), ('cn', 'services'), ('cn', 'accounts'), self.suffix)
         hostdn = DN(('fqdn', self.fqdn), ('cn', 'computers'), ('cn', 'accounts'), self.suffix)
-        entry = self.admin_conn.make_entry(
+        entry = conn.make_entry(
             dn,
             objectclass=[
                 "krbprincipal", "krbprincipalaux", "krbticketpolicyaux",
@@ -239,7 +280,7 @@ class Service(object):
             ipauniqueid=['autogenerate'],
             managedby=[hostdn],
         )
-        self.admin_conn.add_entry(entry)
+        conn.add_entry(entry)
         return dn
 
     def add_cert_to_service(self):
@@ -259,16 +300,18 @@ class Service(object):
         # Using ReconnectLDAPObject instead of SimpleLDAPObject was considered
         # but consequences for other parts of the framework are largely
         # unknown.
-        if self.admin_conn:
+        conn = self.admin_conn if self.on_master else self.master_conn
+        if conn:
             self.ldap_disconnect()
         self.ldap_connect()
+        conn = self.admin_conn if self.on_master else self.master_conn
 
         dn = DN(('krbprincipalname', self.principal), ('cn', 'services'),
                 ('cn', 'accounts'), self.suffix)
-        entry = self.admin_conn.get_entry(dn)
+        entry = conn.get_entry(dn)
         entry.setdefault('userCertificate', []).append(self.dercert)
         try:
-            self.admin_conn.update_entry(entry)
+            conn.update_entry(entry)
         except Exception, e:
             root_logger.critical("Could not add certificate to service %s entry: %s" % (self.principal, str(e)))
 
@@ -388,8 +431,10 @@ class Service(object):
     def ldap_enable(self, name, fqdn, dm_password, ldap_suffix):
         assert isinstance(ldap_suffix, DN)
         self.disable()
-        if not self.admin_conn:
+        conn = self.admin_conn if self.on_master else self.master_conn
+        if not conn:
             self.ldap_connect()
+        conn = self.admin_conn if self.on_master else self.master_conn
 
         server_group = "masters"
         if self.repl_type == "consumer":
@@ -397,7 +442,7 @@ class Service(object):
 
         entry_name = DN(('cn', name), ('cn', fqdn), ('cn', server_group), ('cn', 'ipa'), ('cn', 'etc'), ldap_suffix)
         order = SERVICE_LIST[name][1]
-        entry = self.admin_conn.make_entry(
+        entry = conn.make_entry(
             entry_name,
             objectclass=["nsContainer", "ipaConfigObject"],
             cn=[name],
@@ -406,7 +451,7 @@ class Service(object):
         )
 
         try:
-            self.admin_conn.add_entry(entry)
+            conn.add_entry(entry)
         except (errors.DuplicateEntry), e:
             root_logger.debug("failed to add %s Service startup entry" % name)
             raise e

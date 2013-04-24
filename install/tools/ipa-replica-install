@@ -215,7 +215,7 @@ def install_http(config, auto_redirect):
     memcache.create_instance('MEMCACHE', config.host_name, config.dirman_password, ipautil.realm_to_suffix(config.realm_name))
 
     http = httpinstance.HTTPInstance()
-    http.create_instance(config.realm_name, config.host_name, config.domain_name, config.dirman_password, False, pkcs12_info, self_signed_ca=True, auto_redirect=auto_redirect, http_keytab=http_keytab)
+    http.create_instance(config.realm_name, config.host_name, config.domain_name, config.dirman_password, False, pkcs12_info, self_signed_ca=True, auto_redirect=auto_redirect, http_keytab=http_keytab, replica_type=config.replica_type, master_fqdn=config.master_host_name)
 
     # Now copy the autoconfiguration files
     if ipautil.file_exists(config.dir + "/preferences.html"):

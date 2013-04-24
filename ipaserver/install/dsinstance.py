@@ -230,7 +230,7 @@ class DsInstance(service.Service):
 
     def init_info(self, realm_name, fqdn, domain_name, dm_password,
                   self_signed_ca, subject_base, idstart, idmax, pkcs12_info,
-                  replica_type="master"):
+                  replica_type="master", master_fqdn=None):
         self.realm_name = realm_name.upper()
         self.serverid = realm_to_serverid(self.realm_name)
         self.suffix = ipautil.realm_to_suffix(self.realm_name)
@@ -244,6 +244,9 @@ class DsInstance(service.Service):
         self.idmax = idmax
         self.pkcs12_info = pkcs12_info
         self.replica_type = replica_type
+        self.master_fqdn = master_fqdn
+
+        self._set_service_location(self.replica_type)
 
         self.__setup_sub_dict()
 
@@ -284,8 +287,7 @@ class DsInstance(service.Service):
 
         self.init_info(
             realm_name, fqdn, domain_name, dm_password, None, None,
-            idstart, idmax, pkcs12_info, replica_type)
-        self.master_fqdn = master_fqdn
+            idstart, idmax, pkcs12_info, replica_type, master_fqdn)
 
         self.__common_setup(True)
 
