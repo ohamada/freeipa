@@ -75,6 +75,7 @@ class KrbInstance(service.Service):
         self.domain = None
         self.host = None
         self.admin_password = None
+        self.dm_password = None
         self.master_password = None
         self.suffix = None
         self.subject_base = None
@@ -142,6 +143,8 @@ class KrbInstance(service.Service):
         self.admin_password = admin_password
         self.dm_password = admin_password
 
+        self._set_service_location(self.replica_type)
+
         self.__setup_sub_dict()
 
         # get a connection to the DS
@@ -200,8 +203,6 @@ class KrbInstance(service.Service):
         self.replica_type = replica_type
         self.ds_keytab = ds_keytab
         self.host_keytab = host_keytab
-        
-        self._set_service_location(self.replica_type)
 
         self.__common_setup(realm_name, host_name, domain_name, admin_password)
 
