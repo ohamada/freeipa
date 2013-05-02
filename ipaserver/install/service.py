@@ -91,7 +91,7 @@ class Service(object):
         self.principal = None
         self.dercert = None
 
-        self.repl_type = None
+        self.replica_type = None
 
     def _set_service_location(self, server_type="master"):
         if server_type != "master":
@@ -437,7 +437,7 @@ class Service(object):
         conn = self.admin_conn if self.on_master else self.master_conn
 
         server_group = "masters"
-        if self.repl_type == "consumer":
+        if self.replica_type == "consumer":
             server_group = "consumers"
 
         entry_name = DN(('cn', name), ('cn', fqdn), ('cn', server_group), ('cn', 'ipa'), ('cn', 'etc'), ldap_suffix)
