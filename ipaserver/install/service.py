@@ -457,14 +457,18 @@ class Service(object):
             raise e
 
 class SimpleServiceInstance(Service):
-    def create_instance(self, gensvc_name=None, fqdn=None, dm_password=None, ldap_suffix=None, realm=None):
+    def create_instance(self, gensvc_name=None, fqdn=None, dm_password=None, ldap_suffix=None, realm=None, replica_type="master", master_fqdn=None):
         self.gensvc_name = gensvc_name
         self.fqdn = fqdn
         self.dm_password = dm_password
+        self.master_fqdn = master_fqdn
+        self.replica_type = replica_type
         self.suffix = ldap_suffix
         self.realm = realm
         if not realm:
             self.ldapi = False
+
+        self._set_service_location(server_type=self.replica_type)
 
         self.step("starting %s " % self.service_name, self.__start)
         self.step("configuring %s to start on boot" % self.service_name, self.__enable)
