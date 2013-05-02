@@ -34,6 +34,8 @@ from ipapython import services as ipaservices
 from ipapython import config, dogtag
 from ipapython.dn import DN
 
+SERVER_TYPES = ["masters", "consumers"]
+
 class IpactlError(ScriptError):
     pass
 
@@ -99,56 +101,63 @@ def emit_err(err):
     sys.stderr.write(err + '\n')
 
 def get_config(dirsrv):
-    base = DN(('cn', api.env.host), ('cn', 'masters'), ('cn', 'ipa'), ('cn', 'etc'), api.env.basedn)
-    srcfilter = '(ipaConfigString=enabledService)'
-    attrs = ['cn', 'ipaConfigString']
-    if not dirsrv.is_running():
-        raise IpactlError("Failed to get list of services to probe status:\n" +
-                          "Directory Server is stopped", 3)
-
-    try:
-        # The start/restart functions already wait for the server to be
-        # started. What we are doing with this wait is really checking to see
-        # if the server is listening at all.
-        lurl = ldapurl.LDAPUrl(api.env.ldap_uri)
-        if lurl.urlscheme == 'ldapi':
-            wait_for_open_socket(lurl.hostport, timeout=api.env.startup_timeout)
-        else:
-            (host, port) = lurl.hostport.split(':')
-            wait_for_open_ports(host, [int(port)], timeout=api.env.startup_timeout)
-        con = IPAdmin(ldap_uri=api.env.ldap_uri)
-        con.do_external_bind()
-        res, truncated = con.find_entries(
-            filter=srcfilter,
-            attrs_list=attrs,
-            base_dn=base,
-            scope=con.SCOPE_SUBTREE,
-            time_limit=10)
-        if truncated:
-            raise errors.LimitsExceeded()
-    except errors.NetworkError:
-        # LSB status code 3: program is not running
-        raise IpactlError("Failed to get list of services to probe status:\n" +
-                          "Directory Server is stopped", 3)
-    except errors.NotFound:
-        masters_list = []
-        dn = DN(('cn', 'masters'), ('cn', 'ipa'), ('cn', 'etc'), api.env.basedn)
-        attrs = ['cn']
+    checked_servers = {}
+    for server_type in SERVER_TYPES:
+        base = DN(('cn', api.env.host), ('cn', server_type), ('cn', 'ipa'), ('cn', 'etc'), api.env.basedn)
+        srcfilter = '(ipaConfigString=enabledService)'
+        attrs = ['cn', 'ipaConfigString']
+        if not dirsrv.is_running():
+            raise IpactlError("Failed to get list of services to probe status:\n" +
+                              "Directory Server is stopped", 3)
+    
         try:
-            entries = con.get_entries(dn, con.SCOPE_ONELEVEL, attrs_list=attrs)
+            # The start/restart functions already wait for the server to be
+            # started. What we are doing with this wait is really checking to see
+            # if the server is listening at all.
+            lurl = ldapurl.LDAPUrl(api.env.ldap_uri)
+            if lurl.urlscheme == 'ldapi':
+                wait_for_open_socket(lurl.hostport, timeout=api.env.startup_timeout)
+            else:
+                (host, port) = lurl.hostport.split(':')
+                wait_for_open_ports(host, [int(port)], timeout=api.env.startup_timeout)
+            con = IPAdmin(ldap_uri=api.env.ldap_uri)
+            con.do_external_bind()
+            res, truncated = con.find_entries(
+                filter=srcfilter,
+                attrs_list=attrs,
+                base_dn=base,
+                scope=con.SCOPE_SUBTREE,
+                time_limit=10)
+            if truncated:
+                raise errors.LimitsExceeded()
+            break
+        except errors.NetworkError:
+            # LSB status code 3: program is not running
+            raise IpactlError("Failed to get list of services to probe status:\n" +
+                              "Directory Server is stopped", 3)
+        except errors.NotFound:
+            server_list = []
+            dn = DN(('cn', server_type), ('cn', 'ipa'), ('cn', 'etc'), api.env.basedn)
+            attrs = ['cn']
+            try:
+                entries = con.get_entries(dn, con.SCOPE_ONELEVEL, attrs_list=attrs)
+            except Exception, e:
+                server_list.append("No master found because of error: %s" % str(e))
+            else:
+                for dn, master_entry in entries:
+                    server_list.append(master_entry.single_value('cn'))
+    
+            checked_servers[server_type] = "\n".join(server_list)
+    
         except Exception, e:
-            masters_list.append("No master found because of error: %s" % str(e))
-        else:
-            for dn, master_entry in entries:
-                masters_list.append(master_entry.single_value('cn'))
-
-        masters = "\n".join(masters_list)
-
-        raise IpactlError("Failed to get list of services to probe status!\n"
-                          "Configured hostname '%s' does not match any master server in LDAP:\n%s"
-                          % (api.env.host, masters))
-    except Exception, e:
-        raise IpactlError("Unknown error when retrieving list of services from LDAP: " + str(e))
+            raise IpactlError("Unknown error when retrieving list of services from LDAP: " + str(e))
+    
+    if not res:
+        exception_msg = "Failed to get list of services to probe status!\n"
+        for server_type in SERVER_TYPES:
+            exception_msg += ("Configured hostname '%s' does not match any master server in LDAP:\n%s"
+                  % (api.env.host, checked_servers[server_type]))
+        raise IpactlError(exception_msg)
 
     svc_list = []
 
