@@ -225,8 +225,10 @@ class KrbInstance(service.Service):
 
         self.start_creation(runtime=30)
 
-        self.kpasswd = KpasswdInstance()
-        self.kpasswd.create_instance('KPASSWD', self.fqdn, self.admin_password, self.suffix)
+        # kadmin should be running only on master server
+        if self.on_master:
+            self.kpasswd = KpasswdInstance()
+            self.kpasswd.create_instance('KPASSWD', self.fqdn, self.admin_password, self.suffix)
 
 
     def __enable(self):
