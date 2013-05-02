@@ -527,10 +527,7 @@ class ReplicationManager(object):
         mod = [(ldap.MOD_REPLACE, 'nsslapd-state', 'backend'),
                (ldap.MOD_ADD, 'nsslapd-backend', bename),
                (ldap.MOD_ADD, 'nsslapd-distribution-plugin', path),
-               # use experimental modification fo chain on update plugin - it should chain also
-               # the operations performed by Directory Manager
-               (ldap.MOD_ADD, 'nsslapd-distribution-funct', 'repl_chain_on_update_full')]
-#               (ldap.MOD_ADD, 'nsslapd-distribution-funct', 'repl_chain_on_update')]
+               (ldap.MOD_ADD, 'nsslapd-distribution-funct', 'repl_chain_on_update')]
 
         try:
             self.conn.modify_s(dn, mod)
