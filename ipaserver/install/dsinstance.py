@@ -836,17 +836,18 @@ class DsInstance(service.Service):
 
     def replica_populate(self):
         self.ldap_connect()
+        conn = self.admin_conn if self.on_master else self.master_conn
 
         dn = DN(('cn', 'default'), ('ou', 'profile'), self.suffix)
         try:
-            entry = self.admin_conn.get_entry(dn)
+            entry = conn.get_entry(dn)
             srvlist = entry.single_value('defaultServerList', '')
             srvlist = srvlist.split()
             if not self.fqdn in srvlist:
                 srvlist.append(self.fqdn)
                 attr = ' '.join(srvlist)
                 mod = [(ldap.MOD_REPLACE, 'defaultServerList', attr)]
-                self.admin_conn.modify_s(dn, mod)
+                conn.modify_s(dn, mod)
         except errors.NotFound:
             pass
         except ldap.TYPE_OR_VALUE_EXISTS:
