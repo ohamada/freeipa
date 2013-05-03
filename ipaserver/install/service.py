@@ -23,6 +23,7 @@ import tempfile
 import pwd
 import time
 import datetime
+import re
 
 from ipapython import sysrestore, ipautil, dogtag, ipaldap
 from ipapython import services as ipaservices
@@ -31,6 +32,8 @@ from ipapython.ipa_log_manager import *
 from ipalib import errors
 
 CACERT = "/etc/ipa/ca.crt"
+
+forward_entry = re.compile("^dn: .*cn=config$")
 
 # Autobind modes
 AUTO = 1
@@ -54,12 +57,19 @@ SERVICE_LIST = {
 REFERRAL_CNT = 10
 
 LDAP_ERR_REFERRAL = 10
-LDAP_UNWILLING_TO_PERFORM = 53 
 
 def print_msg(message, output_fd=sys.stdout):
     root_logger.debug(message)
     output_fd.write(message)
     output_fd.write("\n")
+
+def is_forward_mod(path):
+    with open(path,'r') as f:
+        for line in f.readlines():
+            res = forward_entry.match(line)
+            if res is not None:
+                return False
+    return True
 
 
 class Service(object):
@@ -183,7 +193,10 @@ class Service(object):
         # use URI of admin connection
         if not self.admin_conn:
             self.ldap_connect()
-        arg_conn_uri = ["-H", self.admin_conn.ldap_uri]
+        if (not self.on_master) and is_forward_mod(path):
+            arg_conn_uri = ["-H", self.master_conn.ldap_uri]
+        else:
+            arg_conn_uri = ["-H", self.admin_conn.ldap_uri]
 
         auth_parms = []
         if self.dm_password:
@@ -213,12 +226,6 @@ class Service(object):
                     args = temp_args + ["-H", referral_addr]
                     (stdo,stde,errc) = ipautil.run(args, raiseonerr=False, nolog=nologlist)
                     ref_cnt -= 1
-
-                # unwilling to perform - Directory Manager account is trying to write
-                # to the linked database. Do the write directly on that DB instead 
-                if errc == LDAP_UNWILLING_TO_PERFORM:
-                    args = temp_args + ["-H", self.master_conn.ldap_uri]
-                    (stdo,stde,errc) = ipautil.run(args, raiseonerr=False, nolog=nologlist)
 
                 if errc:
                     if not ref_cnt:
