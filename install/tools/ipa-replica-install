@@ -672,12 +672,14 @@ def main():
             CA.restart()
 
     krb = install_krb(config, setup_pkinit=options.setup_pkinit)
-    http = install_http(config, auto_redirect=options.ui_redirect)
+    if config.replica_type == "master":
+        http = install_http(config, auto_redirect=options.ui_redirect)
     if CA:
         CA.configure_certmonger_renewal()
-        CA.import_ra_cert(dir + "/ra.p12")
-        CA.fix_ra_perms()
-        ipaservices.knownservices.httpd.restart()
+        if config.replica_type == "master":
+            CA.import_ra_cert(dir + "/ra.p12")
+            CA.fix_ra_perms()
+            ipaservices.knownservices.httpd.restart()
 
     # The DS instance is created before the keytab, add the SSL cert we
     # generated
@@ -697,9 +699,10 @@ def main():
     if options.setup_dns:
         install_bind(config, options)
 
-    # Restart httpd to pick up the new IPA configuration
-    service.print_msg("Restarting the web server")
-    http.restart()
+    if config.replica_type == "master":
+        # Restart httpd to pick up the new IPA configuration
+        service.print_msg("Restarting the web server")
+        http.restart()
 
     # Call client install script
     try:
