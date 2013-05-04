@@ -413,7 +413,7 @@ def host_is_master(ldap, fqdn):
 
     Raises an exception if a master, otherwise returns nothing.
     """
-    SERVER_TYPE = ["masters", "consumers"]
+    SERVER_TYPE = ["masters", "hubs", "consumers"]
     for server in SERVER_TYPE:
         server_dn = DN(('cn', fqdn), ('cn', server), ('cn', 'ipa'), ('cn', 'etc'), api.env.basedn)
         try:

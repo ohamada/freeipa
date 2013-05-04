@@ -159,7 +159,8 @@ def install_replica_ds(config):
     ds.create_replica(config.realm_name,
                       config.master_host_name, config.host_name,
                       config.domain_name, config.dirman_password,
-                      pkcs12_info, config.replica_type)
+                      pkcs12_info, config.replica_type,
+                      config.farm_fqdn)
 
     return ds
 
@@ -184,7 +185,7 @@ def install_krb(config, setup_pkinit=False):
                        config.domain_name, config.dirman_password,
                        setup_pkinit, pkcs12_info,
                        replica_type=config.replica_type, ds_keytab=ds_keytab,
-                       host_keytab=host_keytab)
+                       host_keytab=host_keytab, farm_fqdn=config.farm_fqdn)
 
     return krb
 

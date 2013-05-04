@@ -42,6 +42,7 @@ app_DATA =				\
 	dna.ldif			\
 	master-entry.ldif		\
 	consumer-entry.ldif		\
+	hub-entry.ldif		\
 	memberof-task.ldif		\
 	memberof-conf.ldif		\
 	nis.uldif			\

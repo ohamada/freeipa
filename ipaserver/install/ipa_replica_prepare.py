@@ -62,8 +62,12 @@ class ReplicaPrepare(admintool.AdminTool):
         parser.add_option("--ca", dest="ca_file", default="/root/cacert.p12",
             metavar="FILE",
             help="location of CA PKCS#12 file, default /root/cacert.p12")
-        parser.add_option("--readonly", dest="readonly", action="store_true",
+        parser.add_option("--consumer", dest="consumer", action="store_true",
             default=False, help="prepare read-only replica")
+        parser.add_option("--hub", dest="hub", action="store_true",
+            default=False, help="prepare read-only replica")
+        parser.add_option("--farm", dest="farm_server",
+            help="specify farm server for read-only replica")
 
         group = OptionGroup(parser, "SSL certificate options",
             "Only used if the server was installed using custom SSL certificates")
@@ -99,6 +103,15 @@ class ReplicaPrepare(admintool.AdminTool):
         elif options.reverse_zone and options.no_reverse:
             self.option_parser.error("You cannot specify a --reverse-zone "
                 "option together with --no-reverse")
+
+        if options.consumer and options.hub:
+            self.option_parser.error("You cannot specify more types of "
+                                     "read-only replicas")
+        # TODO: if the prepare is run on a master, then the farm server could be used 
+        if options.consumer or options.hub:
+            if not options.farm_server:
+                self.option_parser.error("Farm server for read-only replica "
+                                         "must be specified")
 
         # If any of the PKCS#12 options are selected, all are required.
         pkcs12_opts = [options.dirsrv_pkcs12, options.dirsrv_pin,
@@ -280,7 +293,7 @@ class ReplicaPrepare(admintool.AdminTool):
             self.export_certdb("dscert", passwd_fname)
 
         # Dogtag should not be available on RO replicas
-        if not certs.ipa_self_signed() and not options.readonly:
+        if not certs.ipa_self_signed() and not options.consumer and not options.hub:
             self.log.info(
                 "Creating SSL certificate for the dogtag Directory Server")
             self.export_certdb("dogtagcert", passwd_fname)
@@ -356,7 +369,16 @@ class ReplicaPrepare(admintool.AdminTool):
         config.set("realm", "version", str(version.NUM_VERSION))
 
         config.add_section("general")
-        config.set("general", "replica_type", "consumer" if options.readonly else "master")
+        replica_type = "master"
+        farm_server = api.env.host
+        if options.consumer:
+            replica_type = "consumer"
+            farm_server = options.farm_server
+        elif options.hub:
+            replica_type = "hub"
+            farm_server = options.farm_server
+        config.set("general", "replica_type", replica_type)
+        config.set("general", "farm_fqdn", farm_server)
 
         with open(os.path.join(self.dir, "realm_info"), "w") as fd:
             config.write(fd)

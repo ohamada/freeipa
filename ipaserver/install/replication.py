@@ -45,6 +45,8 @@ WINSYNC = 2
 
 CONSUMER_ID = 65535
 
+REPLICA_TYPES = ["masters", "hubs", "consumers"]
+
 # List of attributes that need to be excluded from replication initialization.
 TOTAL_EXCLUDES = ('entryusn',
                  'krblastsuccessfulauth',
@@ -177,7 +179,7 @@ def wait_for_entry(connection, entry, timeout=7200, attr='', quiet=True):
 class ReplicationManager(object):
     """Manage replication agreements between DS servers, and sync
     agreements with Windows servers"""
-    def __init__(self, realm, hostname, dirman_passwd, port=PORT, starttls=False, conn=None, repl_type="master"):
+    def __init__(self, realm, hostname, dirman_passwd, port=PORT, starttls=False, conn=None, replica_type="master"):
         self.hostname = hostname
         self.port = port
         self.dirman_passwd = dirman_passwd
@@ -185,7 +187,7 @@ class ReplicationManager(object):
         self.starttls = starttls
         self.suffix = ipautil.realm_to_suffix(realm)
         self.need_memberof_fixup = False
-        self.repl_type = repl_type
+        self.replica_type = replica_type
 
         # The caller is allowed to pass in an existing IPAdmin connection.
         # Open a new one if not provided
@@ -391,11 +393,11 @@ class ReplicationManager(object):
         else:
             return "0"
 
-    def get_replica_attributes(self, replica_id):
-        is_master = True if not replica_id == CONSUMER_ID else False
-
-        replica_type = self.get_replica_type(is_master)
-        flags = self.get_replica_flags(is_master)
+    def get_replica_attributes(self):
+        # sets whether the replica is Read-Write (master) or Read Only (consumer, hub)
+        replica_type = self.get_replica_type(True if self.replica_type == "master" else False)
+        # sets whether the replica can write to changelog (master, hub)
+        flags = self.get_replica_flags(True if self.replica_type != "consumer" else False)
         return (replica_type, flags)
 
     def replica_dn(self):
@@ -421,7 +423,7 @@ class ReplicationManager(object):
         except errors.NotFound:
             pass
 
-        (replica_type, replica_flags) = self.get_replica_attributes(replica_id)
+        (replica_type, replica_flags) = self.get_replica_attributes()
 
         entry = conn.make_entry(
             dn,
@@ -489,6 +491,15 @@ class ReplicationManager(object):
                 raise
 
         return cn
+    
+    def config_chaining_on_hub(self, conn):
+        dn = DN(('cn', 'config'), ('cn', 'chaining database'), ('cn', 'plugins'), ('cn', 'config'))
+        mod = [(ldap.MOD_ADD, 'nsTransmittedControl', '2.16.840.1.113730.3.4.18'),
+               (ldap.MOD_ADD, 'nsTransmittedControl', '1.3.6.1.4.1.1466.29539.12')]
+        try:
+            conn.modify_s(dn,mod)
+        except ldap.TYPE_OR_VALUE_EXISTS:
+            root_logger.debug("chainOnUpdate already enabled for %s" % self.suffix)
 
     def to_ldap_url(self, conn):
         return "ldap://%s/" % ipautil.format_netloc(conn.host, conn.port)
@@ -537,6 +548,7 @@ class ReplicationManager(object):
     def setup_chain_on_update(self, other_conn):
         self.setup_chaining_farm(other_conn)
         chainbe = self.setup_chaining_backend(other_conn)
+        self.config_chaining_on_hub(other_conn)
         self.enable_chain_on_update(chainbe)
 
     def add_passsync_user(self, conn, password):
@@ -769,7 +781,7 @@ class ReplicationManager(object):
                (ldap.MOD_DELETE, "nsds5replicabinddn", None),
                (ldap.MOD_DELETE, "nsds5replicacredentials", None)]
 
-        if self.repl_type == "master":
+        if self.replica_type == "master":
             cn, a_ag_dn = self.agreement_dn(b.host)
             a.modify_s(a_ag_dn, mod)
 
@@ -926,8 +938,8 @@ class ReplicationManager(object):
         if replpw is not None:
             self.add_replication_manager(conn, repldn, replpw)
         self.replica_config(conn, replica_id, repldn)
-        # setup changelog only on master replica
-        if not replica_id == CONSUMER_ID:
+        # setup changelog only on master and hub replica
+        if not self.replica_type == "consumer":
             self.setup_changelog(conn)
 
     def setup_replication(self, r_hostname, r_port=389, r_sslport=636,
@@ -948,7 +960,7 @@ class ReplicationManager(object):
             r_conn.do_sasl_gssapi_bind()
 
         #Setup the first half
-        l_id = self._get_replica_id(self.conn, r_conn) if self.repl_type == "master" else CONSUMER_ID
+        l_id = self._get_replica_id(self.conn, r_conn) if self.replica_type == "master" else CONSUMER_ID
         self.basic_replication_setup(self.conn, l_id,
                                      self.repl_man_dn, self.repl_man_passwd)
 
@@ -957,7 +969,7 @@ class ReplicationManager(object):
         r_id = self._get_replica_id(r_conn, r_conn)
         self.basic_replication_setup(r_conn, r_id,
                                      self.repl_man_dn,
-                                     self.repl_man_passwd if l_id == CONSUMER_ID else None)
+                                     self.repl_man_passwd if self.replica_type == "consumer" else None)
 
         if is_cs_replica:
             self.setup_agreement(r_conn, self.conn.host, port=local_port,
@@ -982,7 +994,7 @@ class ReplicationManager(object):
         if ret != 0:
             raise RuntimeError("Failed to start replication")
 
-        if CHAINING and self.repl_type == "consumer":
+        if CHAINING and self.replica_type != "master":
             self.setup_chain_on_update(r_conn)
 
     def setup_winsync_replication(self,
@@ -1062,7 +1074,7 @@ class ReplicationManager(object):
         # First off make sure servers are in sync so that both KDCs
         # have all principals and their passwords and can release
         # the right tickets. We do this by force pushing all our changes
-        if self.repl_type == "master":
+        if self.replica_type == "master":
             self.force_sync(self.conn, r_hostname)
             cn, dn = self.agreement_dn(r_hostname)
             self.wait_for_repl_update(self.conn, dn, 300)
@@ -1206,20 +1218,21 @@ class ReplicationManager(object):
 
         # delete master entry with all active services
         try:
-            try:
-                dn = DN(('cn', replica), ('cn', 'masters'), ('cn', 'ipa'),
-                        ('cn', 'etc'), self.suffix)
-            except errors.NotFound:
-                dn = DN(('cn', replica), ('cn', 'consumers'), ('cn', 'ipa'),
-                        ('cn', 'etc'), self.suffix)
+            found_flag = False
+            for replica_type in REPLICA_TYPES:
+                try:
+                    dn = DN(('cn', replica), ('cn', replica_type), ('cn', 'ipa'),
+                            ('cn', 'etc'), self.suffix)
+                    found_flag = True
+                except errors.NotFound:
+                    pass
 
-            entries = self.conn.get_entries(dn, ldap.SCOPE_SUBTREE)
-            if entries:
-                entries.sort(key=len, reverse=True)
-                for entry in entries:
-                    self.conn.delete_entry(entry)
-        except errors.NotFound:
-            pass
+            if found_flag:
+                entries = self.conn.get_entries(dn, ldap.SCOPE_SUBTREE)
+                if entries:
+                    entries.sort(key=len, reverse=True)
+                    for entry in entries:
+                        self.conn.delete_entry(entry)
         except Exception, e:
             if not force:
                 raise e

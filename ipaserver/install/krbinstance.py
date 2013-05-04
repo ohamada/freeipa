@@ -195,7 +195,7 @@ class KrbInstance(service.Service):
                        setup_pkinit=False, pkcs12_info=None,
                        self_signed_ca=False, subject_base=None,
                        replica_type="master", ds_keytab=None,
-                       host_keytab=None):
+                       host_keytab=None, farm_fqdn=None):
         self.pkcs12_info = pkcs12_info
         self.self_signed_ca = self_signed_ca
         self.subject_base = subject_base
@@ -203,6 +203,10 @@ class KrbInstance(service.Service):
         self.replica_type = replica_type
         self.ds_keytab = ds_keytab
         self.host_keytab = host_keytab
+        if farm_fqdn is None:
+            self.farm_fqdn = self.master_fqdn
+        else:
+            self.farm_fqdn = farm_fqdn
 
         self.__common_setup(realm_name, host_name, domain_name, admin_password)
 
@@ -483,7 +487,7 @@ class KrbInstance(service.Service):
                                               self.fqdn,
                                               self.dm_password,
                                               repl_type=self.replica_type)
-        repl.convert_to_gssapi_replication(self.master_fqdn,
+        repl.convert_to_gssapi_replication(self.farm_fqdn,
                                            r_binddn=DN(('cn', 'Directory Manager')),
                                            r_bindpw=self.dm_password)
 

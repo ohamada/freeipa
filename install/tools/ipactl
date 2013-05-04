@@ -34,7 +34,7 @@ from ipapython import services as ipaservices
 from ipapython import config, dogtag
 from ipapython.dn import DN
 
-SERVER_TYPES = ["masters", "consumers"]
+SERVER_TYPES = ["masters", "hubs", "consumers"]
 
 class IpactlError(ScriptError):
     pass

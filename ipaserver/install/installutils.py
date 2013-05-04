@@ -76,6 +76,7 @@ class ReplicaConfig:
         self.setup_ca = False
         self.version = 0
         self.replica_type = ""
+        self.farm_fqdn = ""
 
     subject_base = ipautil.dn_attribute_property('_subject_base')
 
@@ -529,6 +530,7 @@ def read_replica_info(dir, rconfig):
     except NoOptionError:
         pass
     rconfig.replica_type = config.get("general", "replica_type")
+    rconfig.farm_fqdn = config.get("general", "farm_fqdn")
 
 def check_server_configuration():
     """

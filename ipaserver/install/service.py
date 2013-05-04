@@ -102,6 +102,7 @@ class Service(object):
         self.dercert = None
 
         self.replica_type = None
+        self.farm_fqdn = None
 
     def _set_service_location(self, server_type="master"):
         if server_type != "master":
@@ -111,6 +112,8 @@ class Service(object):
                 raise errors.NotFound(reason="missing master fqdn")
             if self.dm_password is None:
                 raise errors.NotFound(reason="missing Directory Manager password for master")
+            if self.farm_fqdn is None:
+                raise errors.NotFound(reason="missing farm server hostname")
 
     def ldap_connect(self):
         # If DM password is provided, we use it
@@ -446,6 +449,8 @@ class Service(object):
         server_group = "masters"
         if self.replica_type == "consumer":
             server_group = "consumers"
+        elif self.replica_type == "hub":
+            server_group = "hubs"
 
         entry_name = DN(('cn', name), ('cn', fqdn), ('cn', server_group), ('cn', 'ipa'), ('cn', 'etc'), ldap_suffix)
         order = SERVICE_LIST[name][1]

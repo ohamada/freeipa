@@ -215,8 +215,10 @@ class DsInstance(service.Service):
 
     def __common_post_setup(self):
         self.step("initializing group membership", self.init_memberof)
-        if not self.replica_type == "consumer":
+        if self.replica_type == "master":
             self.step("adding master entry", self.__add_master_entry)
+        elif self.replica_type == "hub":
+            self.step("adding hub entry", self.__add_hub_entry)
         else:
             self.step("adding consumer entry", self.__add_consumer_entry)
         self.step("configuring Posix uid/gid generation",
@@ -230,7 +232,7 @@ class DsInstance(service.Service):
 
     def init_info(self, realm_name, fqdn, domain_name, dm_password,
                   self_signed_ca, subject_base, idstart, idmax, pkcs12_info,
-                  replica_type="master", master_fqdn=None):
+                  replica_type="master", master_fqdn=None, farm_fqdn=None):
         self.realm_name = realm_name.upper()
         self.serverid = realm_to_serverid(self.realm_name)
         self.suffix = ipautil.realm_to_suffix(self.realm_name)
@@ -245,6 +247,7 @@ class DsInstance(service.Service):
         self.pkcs12_info = pkcs12_info
         self.replica_type = replica_type
         self.master_fqdn = master_fqdn
+        self.farm_fqdn = master_fqdn if farm_fqdn is None else farm_fqdn
 
         self._set_service_location(self.replica_type)
 
@@ -277,7 +280,7 @@ class DsInstance(service.Service):
 
     def create_replica(self, realm_name, master_fqdn, fqdn,
                        domain_name, dm_password, pkcs12_info=None,
-                       replica_type="master"):
+                       replica_type="master", farm_fqdn=None):
         # idstart and idmax are configured so that the range is seen as
         # depleted by the DNA plugin and the replica will go and get a
         # new range from the master.
@@ -287,7 +290,8 @@ class DsInstance(service.Service):
 
         self.init_info(
             realm_name, fqdn, domain_name, dm_password, None, None,
-            idstart, idmax, pkcs12_info, replica_type, master_fqdn)
+            idstart, idmax, pkcs12_info, replica_type, master_fqdn,
+            farm_fqdn)
 
         self.__common_setup(True)
 
@@ -309,8 +313,8 @@ class DsInstance(service.Service):
         repl = replication.ReplicationManager(self.realm_name,
                                               self.fqdn,
                                               self.dm_password,
-                                              repl_type=self.replica_type)
-        repl.setup_replication(self.master_fqdn,
+                                              replica_type=self.replica_type)
+        repl.setup_replication(self.farm_fqdn,
                                r_binddn=DN(('cn', 'Directory Manager')),
                                r_bindpw=self.dm_password)
         self.run_init_memberof = repl.needs_memberof_fixup()
@@ -492,6 +496,9 @@ class DsInstance(service.Service):
 
     def __add_consumer_entry(self):
         self._ldap_mod("consumer-entry.ldif", self.sub_dict)
+
+    def __add_hub_entry(self):
+        self._ldap_mod("hub-entry.ldif", self.sub_dict)
 
     def __add_winsync_module(self):
         self._ldap_mod("ipa-winsync-conf.ldif")
@@ -858,7 +865,7 @@ class DsInstance(service.Service):
             repl = replication.ReplicationManager(self.realm_name,
                                                   self.fqdn,
                                                   self.dm_password,
-                                                  repl_type=self.replica_type)
+                                                  replica_type=self.replica_type)
             repl.start_replication(conn, self.fqdn, self.master_fqdn)
 
         self.ldap_disconnect()
