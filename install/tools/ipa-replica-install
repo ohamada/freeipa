@@ -55,6 +55,7 @@ log_file_name = "/var/log/ipareplica-install.log"
 CACERT = "/etc/ipa/ca.crt"
 REPLICA_INFO_TOP_DIR = None
 DIRMAN_DN = DN(('cn', 'directory manager'))
+ON_MASTER = True
 
 def parse_options():
     usage = "%prog [options] REPLICA_FILE"
@@ -488,6 +489,9 @@ def main():
         root_logger.error('A replica file from a newer release (%d) cannot be installed on an older version (%d)' % (config.version, version.NUM_VERSION))
         sys.exit(1)
     config.dirman_password = dirman_password
+
+    ON_MASTER = True if config.replica_type == "master" else False
+
     try:
         host = get_host_name(options.no_host_dns)
     except BadHostError, e:
@@ -505,7 +509,7 @@ def main():
     config.dir = dir
     config.setup_ca = options.setup_ca
 
-    if config.setup_ca and not config.replica_type == "master":
+    if config.setup_ca and not ON_MASTER:
         try:
             print "This replica is read-only and does not support CA"
             if not ipautil.user_input("CA will not be installed. Continue?", False):
@@ -672,11 +676,11 @@ def main():
             CA.restart()
 
     krb = install_krb(config, setup_pkinit=options.setup_pkinit)
-    if config.replica_type == "master":
+    if ON_MASTER:
         http = install_http(config, auto_redirect=options.ui_redirect)
     if CA:
         CA.configure_certmonger_renewal()
-        if config.replica_type == "master":
+        if ON_MASTER:
             CA.import_ra_cert(dir + "/ra.p12")
             CA.fix_ra_perms()
             ipaservices.knownservices.httpd.restart()
@@ -699,7 +703,7 @@ def main():
     if options.setup_dns:
         install_bind(config, options)
 
-    if config.replica_type == "master":
+    if ON_MASTER:
         # Restart httpd to pick up the new IPA configuration
         service.print_msg("Restarting the web server")
         http.restart()
