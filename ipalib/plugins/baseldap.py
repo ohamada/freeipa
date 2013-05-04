@@ -413,13 +413,15 @@ def host_is_master(ldap, fqdn):
 
     Raises an exception if a master, otherwise returns nothing.
     """
-    master_dn = DN(('cn', fqdn), ('cn', 'masters'), ('cn', 'ipa'), ('cn', 'etc'), api.env.basedn)
-    try:
-        (dn, entry_attrs) = ldap.get_entry(master_dn, ['objectclass'])
-        raise errors.ValidationError(name='hostname', error=_('An IPA master host cannot be deleted or disabled'))
-    except errors.NotFound:
-        # Good, not a master
-        return
+    SERVER_TYPE = ["masters", "consumers"]
+    for server in SERVER_TYPE:
+        server_dn = DN(('cn', fqdn), ('cn', server), ('cn', 'ipa'), ('cn', 'etc'), api.env.basedn)
+        try:
+            (dn, entry_attrs) = ldap.get_entry(server_dn, ['objectclass'])
+            raise errors.ValidationError(name='hostname', error=_('An IPA master host cannot be deleted or disabled'))
+        except errors.NotFound:
+            # Good, not a master or consumer or other supported server type
+            pass
 
 
 class LDAPObject(Object):
