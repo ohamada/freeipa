@@ -537,7 +537,7 @@ class ReplicaPrepare(admintool.AdminTool):
                     installutils.remove_file(self.dir + "/%s.keytab" % principals[principal])
 
         options = self.options
-        services = { 'ldap' : 'ds', 'HTTP' : 'http' }
+        services = {'ldap' : 'ds'}
         principals = {}
         err = None
 
