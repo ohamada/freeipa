@@ -36,9 +36,11 @@ import ldap
 from ipapython import ipautil, sysrestore, admintool, dogtag
 from ipapython.admintool import ScriptError
 from ipapython.ipa_log_manager import *
+from ipapython.ipaldap import IPAdmin
 from ipalib.util import validate_hostname
 from ipapython import config
 from ipalib import errors
+from ipalib import api
 from ipapython.dn import DN
 
 # Used to determine install status
@@ -48,6 +50,8 @@ IPA_MODULES = [
 if not dogtag.install_constants.SHARED_DB:
     IPA_MODULES.append('pkids')
 
+SERVER_TYPES = ["masters", "hubs", "consumers"]
+CACERT="/etc/ipa/ca.crt"
 
 class BadHostError(Exception):
     pass
@@ -703,3 +707,34 @@ def handle_error(error, log_file_name=None):
         message = "Unexpected error"
     message += '\n%s: %s' % (type(error).__name__, error)
     return message, 1
+
+def get_replica_type(hostname, port=389, binddn=None, bindpw=None, other_conn=None):
+    if binddn is None:
+        binddn = DN(("cn", "Directory Manager"))
+    if other_conn is None:
+        conn = IPAdmin( hostname, port=port, cacert=CACERT, protocol='ldap',
+                                start_tls=True)
+        if bindpw is not None:
+            conn.do_simple_bind(binddn=binddn, bindpw=bindpw)
+        else:
+            conn.do_sasl_gssapi_bind()
+    else:
+        conn = other_conn
+
+    # attributes we are looking for
+    attrs = ['cn']
+    result = ""
+    for server_type in SERVER_TYPES:
+        dn = DN(('cn', hostname), ('cn', server_type), ('cn', 'ipa'), ('cn', 'etc'), api.env.basedn)
+        try:
+            entries = conn.get_entries(dn, conn.SCOPE_ONELEVEL, attrs_list=attrs)
+            # cut off the trailing 's'
+            result = server_type[:-1]
+            break
+        except errors.NotFound:
+            pass
+    if conn is not other_conn:
+        conn.unbind()
+    if not result:
+        raise errors.NotFound(reason="Hostname %s is not a registered replica" % hostname)
+    return result
