@@ -28,6 +28,7 @@ from ipapython import services as ipaservices
 from ipapython.ipa_log_manager import *
 from ipapython import ipautil, dogtag, ipaldap
 from ipapython.dn import DN
+from ipaserver.install import installutils
 
 CACERT = "/etc/ipa/ca.crt"
 # the default container used by AD for user entries
@@ -393,11 +394,16 @@ class ReplicationManager(object):
         else:
             return "0"
 
-    def get_replica_attributes(self):
+    def get_replica_attributes(self, conn):
+        try:
+            replica_type = installutils.get_replica_type(conn.host,other_conn=conn)
+        except errors.NotFound:
+            # we are setting new replica that has not been registered yes
+            replica_type = self.replica_type
         # sets whether the replica is Read-Write (master) or Read Only (consumer, hub)
-        replica_type = self.get_replica_type(True if self.replica_type == "master" else False)
+        replica_type = self.get_replica_type(True if replica_type == "master" else False)
         # sets whether the replica can write to changelog (master, hub)
-        flags = self.get_replica_flags(True if self.replica_type != "consumer" else False)
+        flags = self.get_replica_flags(True if replica_type != "consumer" else False)
         return (replica_type, flags)
 
     def replica_dn(self):
@@ -423,7 +429,7 @@ class ReplicationManager(object):
         except errors.NotFound:
             pass
 
-        (replica_type, replica_flags) = self.get_replica_attributes()
+        (replica_type, replica_flags) = self.get_replica_attributes(conn)
 
         entry = conn.make_entry(
             dn,
@@ -546,9 +552,12 @@ class ReplicationManager(object):
             root_logger.debug("chainOnUpdate already enabled for %s" % self.suffix)
 
     def setup_chain_on_update(self, other_conn):
-        self.setup_chaining_farm(other_conn)
+        other_replica_type = installutils.get_replica_type(other_conn.host, other_conn=other_conn)
+        if other_replica_type == "master":
+            self.setup_chaining_farm(other_conn)
         chainbe = self.setup_chaining_backend(other_conn)
-        self.config_chaining_on_hub(other_conn)
+        if other_replica_type == "hub":
+            self.config_chaining_on_hub(other_conn)
         self.enable_chain_on_update(chainbe)
 
     def add_passsync_user(self, conn, password):
@@ -958,6 +967,11 @@ class ReplicationManager(object):
             r_conn.do_simple_bind(binddn=r_binddn, bindpw=r_bindpw)
         else:
             r_conn.do_sasl_gssapi_bind()
+
+        # do a validation of both nodes
+        remote_replica_type = installutils.get_replica_type(r_conn.host, other_conn=r_conn)
+        if remote_replica_type == "consumer":
+            raise RuntimeError("The specified farm server is consumer")
 
         #Setup the first half
         l_id = self._get_replica_id(self.conn, r_conn) if self.replica_type == "master" else CONSUMER_ID

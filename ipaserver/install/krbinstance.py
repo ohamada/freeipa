@@ -486,7 +486,7 @@ class KrbInstance(service.Service):
         repl = replication.ReplicationManager(self.realm,
                                               self.fqdn,
                                               self.dm_password,
-                                              repl_type=self.replica_type)
+                                              replica_type=self.replica_type)
         repl.convert_to_gssapi_replication(self.farm_fqdn,
                                            r_binddn=DN(('cn', 'Directory Manager')),
                                            r_bindpw=self.dm_password)
