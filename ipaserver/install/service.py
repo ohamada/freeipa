@@ -219,22 +219,23 @@ class Service(object):
             (stdo,stde,errc) = ipautil.run(args, raiseonerr=False, nolog=nologlist)
             if not self.on_master:
                 # referral returned
-                ref_cnt = REFERRAL_CNT
-                while errc == LDAP_ERR_REFERRAL and ref_cnt and not self.on_master:
-                    # parse the first referral address from the output
-                    clean_stde = stde.replace("\t","").split("\n")
-                    referral_addr = clean_stde[clean_stde.index("referrals:") + 1]
-                    if not referral_addr:
-                        break
-                    args = temp_args + ["-H", referral_addr]
-                    (stdo,stde,errc) = ipautil.run(args, raiseonerr=False, nolog=nologlist)
-                    ref_cnt -= 1
+                if errc == LDAP_ERR_REFERRAL:
+                    ref_cnt = REFERRAL_CNT
+                    while (errc == LDAP_ERR_REFERRAL) and ref_cnt:
+                        # parse the first referral address from the output
+                        clean_stde = stde.replace("\t","").split("\n")
+                        referral_addr = clean_stde[clean_stde.index("referrals:") + 1]
+                        if not referral_addr:
+                            break
+                        args = temp_args + ["-H", referral_addr]
+                        (stdo,stde,errc) = ipautil.run(args, raiseonerr=False, nolog=nologlist)
+                        ref_cnt -= 1
 
-                if errc:
-                    if not ref_cnt:
-                        root_logger.critical("Failed to load %s: Too many referrals" % ldif)
-                    else:
-                        root_logger.critical("Failed to load %s: %s" % (ldif, ' '.join(args + nologlist)))
+                    if errc:
+                        if not ref_cnt:
+                            root_logger.critical("Failed to load %s: Too many referrals" % ldif)
+                        else:
+                            root_logger.critical("Failed to load %s: %s" % (ldif, ' '.join(args + nologlist)))
         finally:
             if pw_name:
                 os.remove(pw_name)
