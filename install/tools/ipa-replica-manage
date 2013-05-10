@@ -583,6 +583,7 @@ def del_master(realm, hostname, options):
 
     # 3. If an IPA agreement connect to the master to be removed.
     repltype = thisrepl.get_agreement_type(hostname)
+    replica_type = installutils.get_replica_type(thisrepl.conn.host,other_conn=thisrepl.conn) + "s"
     if repltype == replication.IPA_REPLICA:
         winsync = False
         try:
@@ -597,7 +598,7 @@ def del_master(realm, hostname, options):
                 force_del = True
 
         if force_del:
-            dn = DN(('cn', 'masters'), ('cn', 'ipa'), ('cn', 'etc'), thisrepl.suffix)
+            dn = DN(('cn', replica_type), ('cn', 'ipa'), ('cn', 'etc'), thisrepl.suffix)
             entries = thisrepl.conn.get_entries(
                 dn, thisrepl.conn.SCOPE_ONELEVEL)
             replica_names = []
@@ -625,8 +626,8 @@ def del_master(realm, hostname, options):
         if not ipautil.user_input("Continue to delete?", False):
             sys.exit("Deletion aborted")
 
-    # Check for orphans if the remote server is up.
-    if delrepl and not winsync:
+    # Check for orphans if the remote server is up. Consumer does not have any orphans
+    if (delrepl and not winsync) and replica_type != "consumers":
         masters_dn = DN(('cn', 'masters'), ('cn', 'ipa'), ('cn', 'etc'), ipautil.realm_to_suffix(realm))
         try:
             masters = delrepl.conn.get_entries(
