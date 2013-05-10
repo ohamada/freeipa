@@ -442,10 +442,9 @@ class Service(object):
     def ldap_enable(self, name, fqdn, dm_password, ldap_suffix):
         assert isinstance(ldap_suffix, DN)
         self.disable()
-        conn = self.admin_conn if self.on_master else self.master_conn
-        if not conn:
+
+        if not self.admin_conn or (not self.on_master and not self.master_conn):
             self.ldap_connect()
-        conn = self.admin_conn if self.on_master else self.master_conn
 
         server_group = "masters"
         if self.replica_type == "consumer":
@@ -455,7 +454,7 @@ class Service(object):
 
         entry_name = DN(('cn', name), ('cn', fqdn), ('cn', server_group), ('cn', 'ipa'), ('cn', 'etc'), ldap_suffix)
         order = SERVICE_LIST[name][1]
-        entry = conn.make_entry(
+        entry = self.admin_conn.make_entry(
             entry_name,
             objectclass=["nsContainer", "ipaConfigObject"],
             cn=[name],
@@ -464,7 +463,9 @@ class Service(object):
         )
 
         try:
-            conn.add_entry(entry)
+            self.admin_conn.add_entry(entry)
+            if not self.on_master:
+                self.master_conn.add_entry(entry)
         except (errors.DuplicateEntry), e:
             root_logger.debug("failed to add %s Service startup entry" % name)
             raise e
