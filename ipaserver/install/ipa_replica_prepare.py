@@ -243,6 +243,7 @@ class ReplicaPrepare(admintool.AdminTool):
             self.replica_fqdn, api.env.host)
         enable_replication_version_checking(api.env.host, api.env.realm,
             self.dirman_password)
+        self.check_farm_server()
 
         self.top_dir = tempfile.mkdtemp("ipa")
         self.dir = os.path.join(self.top_dir, "realm_info")
@@ -544,6 +545,15 @@ class ReplicaPrepare(admintool.AdminTool):
         except ipautil.CalledProcessError, err:
             ipautil.run(["ipa", "host-del", "--force", self.replica_fqdn], raiseonerr=False)
             raise admintool.ScriptError(str(err))
+
+    def check_farm_server(self):
+        options = self.options
+        farm_server_type = installutils.get_replica_type(options.farm_server, bindpw=options.password)
+        if farm_server_type == "consumer":
+            raise admintool.ScriptError("Can not specify Consumer replica as a farm server")
+        if farm_server_type == "hub":
+            if not (options.hub or options.consumer):
+                raise admintool.ScriptError(reason="Master replica can not be subordinated to Hub replica")
 
     def create_principals(self):
         def remove_principals(principals):
