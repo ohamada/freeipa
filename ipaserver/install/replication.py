@@ -774,11 +774,13 @@ class ReplicationManager(object):
             a.modify_s(rep_dn, mod)
         except ldap.TYPE_OR_VALUE_EXISTS:
             pass
-        try:
-            mod = [(ldap.MOD_ADD, "nsds5replicabinddn", a_dn)]
-            b.modify_s(rep_dn, mod)
-        except ldap.TYPE_OR_VALUE_EXISTS:
-            pass
+        # only for multi-master replication
+        if self.replica_type == "master":
+            try:
+                mod = [(ldap.MOD_ADD, "nsds5replicabinddn", a_dn)]
+                b.modify_s(rep_dn, mod)
+            except ldap.TYPE_OR_VALUE_EXISTS:
+                pass
 
     def gssapi_update_agreements(self, a, b):
 
