@@ -860,12 +860,12 @@ class DsInstance(service.Service):
         except ldap.TYPE_OR_VALUE_EXISTS:
             pass
 
-        if not self.on_master:
-            # we must reinit the replica because of data stored to master in previous step
-            repl = replication.ReplicationManager(self.realm_name,
-                                                  self.fqdn,
-                                                  self.dm_password,
-                                                  replica_type=self.replica_type)
-            repl.start_replication(conn, self.fqdn, self.master_fqdn)
+#        if not self.on_master:
+#            # we must reinit the replica because of data stored to master in previous step
+#            repl = replication.ReplicationManager(self.realm_name,
+#                                                  self.fqdn,
+#                                                  self.dm_password,
+#                                                  replica_type=self.replica_type)
+#            repl.start_replication(conn, self.fqdn, self.master_fqdn)
 
         self.ldap_disconnect()
