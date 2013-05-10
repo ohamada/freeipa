@@ -238,7 +238,7 @@ def install_http(config, auto_redirect):
 
     return http
 
-def install_bind(config, options):
+def install_bind_rw(config, options):
     api.Backend.ldap2.connect(bind_dn=DIRMAN_DN,
                               bind_pw=config.dirman_password)
     if options.forwarders:
@@ -269,6 +269,38 @@ def install_bind(config, options):
     print ""
     bind.check_global_configuration()
     print ""
+
+
+def install_bind_ro(config,options):
+    with temporary_ldap2_connection(config.master_host_name, config.dirman_password, DIRMAN_DN):
+        if options.forwarders:
+            forwarders = options.forwarders
+        else:
+            forwarders = ()
+        bind = bindinstance.BindInstance(dm_password=config.dirman_password, on_master=False)
+
+        if options.reverse_zone:
+            if not bindinstance.verify_reverse_zone(options.reverse_zone, config.ip):
+                sys.exit(1)
+            reverse_zone = bindinstance.normalize_zone(options.reverse_zone)
+        else:
+            reverse_zone = bindinstance.find_reverse_zone(config.ip)
+            if reverse_zone is None and not options.no_reverse:
+                reverse_zone = util.get_reverse_zone_default(config.ip)
+                if not options.unattended and bindinstance.create_reverse():
+                    reverse_zone = bindinstance.read_reverse_zone(reverse_zone, config.ip)
+
+        if reverse_zone is not None:
+            print "Using reverse zone %s" % reverse_zone
+
+        bind.setup(config.host_name, config.ip_address, config.realm_name,
+                   config.domain_name, forwarders, options.conf_ntp, reverse_zone,
+                   ca_configured=options.setup_ca)
+        bind.create_instance()
+
+        print ""
+        bind.check_global_configuration()
+        print ""
 
 
 @contextmanager
@@ -702,7 +734,10 @@ def main():
     krb.restart()
 
     if options.setup_dns:
-        install_bind(config, options)
+        if ON_MASTER:
+            install_bind_rw(config, options)
+        else:
+            install_bind_ro(config, options)
 
     if ON_MASTER:
         # Restart httpd to pick up the new IPA configuration

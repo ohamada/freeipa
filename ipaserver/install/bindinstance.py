@@ -427,7 +427,7 @@ class DnsBackup(object):
 
 
 class BindInstance(service.Service):
-    def __init__(self, fstore=None, dm_password=None):
+    def __init__(self, fstore=None, dm_password=None, on_master=True):
         service.Service.__init__(self, "named",
             service_desc="DNS",
             dm_password=dm_password,
@@ -444,6 +444,7 @@ class BindInstance(service.Service):
         self.sub_dict = None
         self.reverse_zone = None
         self.dm_password = dm_password
+        self.on_master = on_master
 
         if fstore:
             self.fstore = fstore
@@ -634,16 +635,20 @@ class BindInstance(service.Service):
 
     def __add_self(self):
         zone = self.domain
-        resource_records = (
+        resource_records = [
             ("_ldap._tcp", "SRV", "0 100 389 %s" % self.host_in_rr),
             ("_kerberos", "TXT", self.realm),
             ("_kerberos._tcp", "SRV", "0 100 88 %s" % self.host_in_rr),
-            ("_kerberos._udp", "SRV", "0 100 88 %s" % self.host_in_rr),
-            ("_kerberos-master._tcp", "SRV", "0 100 88 %s" % self.host_in_rr),
-            ("_kerberos-master._udp", "SRV", "0 100 88 %s" % self.host_in_rr),
-            ("_kpasswd._tcp", "SRV", "0 100 464 %s" % self.host_in_rr),
-            ("_kpasswd._udp", "SRV", "0 100 464 %s" % self.host_in_rr),
-        )
+            ("_kerberos._udp", "SRV", "0 100 88 %s" % self.host_in_rr)
+        ]
+
+        if self.on_master:
+            resource_records += [
+                ("_kerberos-master._tcp", "SRV", "0 100 88 %s" % self.host_in_rr),
+                ("_kerberos-master._udp", "SRV", "0 100 88 %s" % self.host_in_rr),
+                ("_kpasswd._tcp", "SRV", "0 100 464 %s" % self.host_in_rr),
+                ("_kpasswd._udp", "SRV", "0 100 464 %s" % self.host_in_rr)
+            ]
 
         for (host, type, rdata) in resource_records:
             if type == "SRV":
