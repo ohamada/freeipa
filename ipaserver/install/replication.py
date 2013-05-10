@@ -1234,21 +1234,17 @@ class ReplicationManager(object):
 
         # delete master entry with all active services
         try:
-            found_flag = False
             for replica_type in REPLICA_TYPES:
                 try:
                     dn = DN(('cn', replica), ('cn', replica_type), ('cn', 'ipa'),
                             ('cn', 'etc'), self.suffix)
-                    found_flag = True
+                    entries = self.conn.get_entries(dn, ldap.SCOPE_SUBTREE)
+                    if entries:
+                        entries.sort(key=len, reverse=True)
+                        for entry in entries:
+                            self.conn.delete_entry(entry)
                 except errors.NotFound:
                     pass
-
-            if found_flag:
-                entries = self.conn.get_entries(dn, ldap.SCOPE_SUBTREE)
-                if entries:
-                    entries.sort(key=len, reverse=True)
-                    for entry in entries:
-                        self.conn.delete_entry(entry)
         except Exception, e:
             if not force:
                 raise e
