@@ -604,7 +604,8 @@ class ReplicaPrepare(admintool.AdminTool):
             #remove host
             if ipautil.file_exists(self.dir + "/krb5.keytab"):
                 installutils.remove_file(self.dir + "/krb5.keytab")
-            api.Command['host_del'](unicode(self.replica_fqdn), force=True)
+            try:
+                ipautil.run(['host_del', '--force', self.replica_fqdn])
+            except:
+                pass
             admintool.ScriptError(str(err))
-
-
