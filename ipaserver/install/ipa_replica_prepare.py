@@ -248,6 +248,10 @@ class ReplicaPrepare(admintool.AdminTool):
         self.top_dir = tempfile.mkdtemp("ipa")
         self.dir = os.path.join(self.top_dir, "realm_info")
         os.mkdir(self.dir, 0700)
+
+        if options.ip_address:
+            self.add_dns_records()
+
         try:
             self.add_replica_host()
             self.create_principals()
@@ -265,11 +269,14 @@ class ReplicaPrepare(admintool.AdminTool):
             self.save_config()
 
             self.package_replica_file()
+        except Exception, e:
+            try:
+                ipautil.run(['ipa', 'host-del', '--updatedns', self.replica_fqdn])
+            except Exception:
+                pass
+            raise e
         finally:
             shutil.rmtree(self.top_dir)
-
-        if options.ip_address:
-            self.add_dns_records()
 
     def copy_ds_certificate(self):
         options = self.options
