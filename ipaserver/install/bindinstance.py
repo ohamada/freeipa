@@ -779,7 +779,10 @@ class BindInstance(service.Service):
         )
 
         for (record, type, rdata) in resource_records:
-            del_rr(zone, record, type, rdata)
+            try:
+                del_rr(zone, record, type, rdata)
+            except Exception:
+                pass
 
         areclist = [("A", x) for x in get_rr(zone, host, "A")] + [("AAAA", x) for x in get_rr(zone, host, "AAAA")]
         for (type, rdata) in areclist:
