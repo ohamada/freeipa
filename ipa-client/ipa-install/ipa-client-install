@@ -92,6 +92,7 @@ def parse_options():
     basic_group = OptionGroup(parser, "basic options")
     basic_group.add_option("--domain", dest="domain", help="domain name")
     basic_group.add_option("--server", dest="server", help="IPA server", action="append")
+    basic_group.add_option("--enroll-server", dest="enroll_server", help="IPA enrollment server", action="append")
     basic_group.add_option("--realm", dest="realm_name", help="realm name")
     basic_group.add_option("--fixed-primary", dest="primary", action="store_true",
                       default=False, help="Configure sssd to use fixed server as primary IPA server")
@@ -825,7 +826,7 @@ def hardcode_ldap_server(cli_server):
     return
 
 def configure_krb5_conf(cli_realm, cli_domain, cli_server, cli_kdc, dnsok,
-        options, filename, client_domain):
+        options, filename, client_domain, cli_enroll_server):
 
     krbconf = ipaclient.ipachangeconf.IPAChangeConf("IPA Installer")
     krbconf.setOptionAssignment((" = ", " "))
@@ -862,8 +863,12 @@ def configure_krb5_conf(cli_realm, cli_domain, cli_server, cli_kdc, dnsok,
         #[realms]
         for server in cli_server:
             kropts.append({'name':'kdc', 'type':'option', 'value':ipautil.format_netloc(server, 88)})
+        for server in cli_enroll_server:
+            # don't add twice the same server
+            if server not in cli_server:
+                kropts.append({'name':'kdc', 'type':'option', 'value':ipautil.format_netloc(server, 88)})
             kropts.append({'name':'master_kdc', 'type':'option', 'value':ipautil.format_netloc(server, 88)})
-            kropts.append({'name':'admin_server', 'type':'option', 'value':ipautil.format_netloc(server, 749)})
+            kropts.append({'name':'admin_server', 'type':'option', 'value':ipautil.format_netloc(server, 749)})            
         kropts.append({'name':'default_domain', 'type':'option', 'value':cli_domain})
     kropts.append({'name':'pkinit_anchors', 'type':'option', 'value':'FILE:%s' % CACERT})
     ropts = [{'name':cli_realm, 'type':'subsection', 'value':kropts}]
@@ -946,7 +951,7 @@ def configure_certmonger(fstore, subject_base, cli_realm, hostname, options):
             root_logger.error(
                 "%s request for host certificate failed", cmonger.service_name)
 
-def configure_sssd_conf(fstore, cli_realm, cli_domain, cli_server, options, client_domain, client_hostname):
+def configure_sssd_conf(fstore, cli_realm, cli_domain, cli_server, options, client_domain, client_hostname, cli_enroll_server):
     try:
         sssdconfig = SSSDConfig.SSSDConfig()
         sssdconfig.import_config()
@@ -1029,6 +1034,10 @@ def configure_sssd_conf(fstore, cli_realm, cli_domain, cli_server, options, clie
     domain.set_option('ipa_hostname', client_hostname)
     if cli_domain.lower() != cli_realm.lower():
         domain.set_option('krb5_realm', cli_realm)
+
+    if cli_enroll_server:
+        domain.set_option('krb5_kpasswd', ', '.join(cli_enroll_server))
+        domain.set_option('krb5_backup_kpasswd', ', '.join(cli_enroll_server))
 
     # Might need this if /bin/hostname doesn't return a FQDN
     #domain.set_option('ipa_hostname', 'client.example.com')
@@ -1682,6 +1691,7 @@ def install(options, env, fstore, statestore):
 
     cli_domain = None
     cli_server = None
+    cli_enroll_server = None
     subject_base = None
 
     cli_domain_source = 'Unknown source'
@@ -1733,10 +1743,13 @@ def install(options, env, fstore, statestore):
                 "nss_ldap or nss-pam-ldapd")
             return CLIENT_INSTALL_ERROR
 
+    if options.enroll_server is None:
+        options.enroll_server = []
+
     # Create the discovery instance
     ds = ipadiscovery.IPADiscovery()
 
-    ret = ds.search(domain=options.domain, servers=options.server, hostname=hostname, ca_cert_path=get_cert_path(options.ca_cert_file))
+    ret = ds.search(domain=options.domain, servers=options.server+options.enroll_server, hostname=hostname, ca_cert_path=get_cert_path(options.ca_cert_file))
 
     if options.server and ret != 0:
         # There is no point to continue with installation as server list was
@@ -1784,7 +1797,7 @@ def install(options, env, fstore, statestore):
             cli_domain_source = 'Provided interactively'
             root_logger.debug(
                 "will use interactively provided domain: %s", cli_domain)
-        ret = ds.search(domain=cli_domain, servers=options.server, hostname=hostname, ca_cert_path=get_cert_path(options.ca_cert_file))
+        ret = ds.search(domain=cli_domain, servers=options.server+options.enroll_server, hostname=hostname, ca_cert_path=get_cert_path(options.ca_cert_file))
 
     if not cli_domain:
         if ds.domain:
@@ -1808,7 +1821,24 @@ def install(options, env, fstore, statestore):
             cli_server = [user_input("Provide your IPA server name (ex: ipa.example.com)", allow_empty = False)]
             cli_server_source = 'Provided interactively'
             root_logger.debug("will use interactively provided server: %s", cli_server[0])
-        ret = ds.search(domain=cli_domain, servers=cli_server, hostname=hostname, ca_cert_path=get_cert_path(options.ca_cert_file))
+
+        if options.enroll_server:
+            cli_enroll_server = options.enroll_server
+            cli_enroll_server_source = 'Provided as option'
+        elif options.unattended:
+            root_logger.error("Unable to find enrollment IPA Server to join")
+            return CLIENT_INSTALL_ERROR
+        else:
+            root_logger.debug("DNS discovery failed to find the IPA Server")
+            cli_enroll_server = [user_input("Provide your IPA server name (ex: ipa.example.com)", allow_empty = True)]
+            if not cli_enroll_server:
+                cli_enroll_server = cli_server
+                cli_enroll_server_source = 'Used same server as for the master'
+            else:
+                cli_enroll_server_source = 'Provided interactively'
+            root_logger.debug("will use interactively provided server: %s", cli_server[0])
+
+        ret = ds.search(domain=cli_domain, servers=cli_server+cli_enroll_server, hostname=hostname, ca_cert_path=get_cert_path(options.ca_cert_file))
 
     else:
         # Only set dnsok to True if we were not passed in one or more servers
@@ -1832,6 +1862,20 @@ def install(options, env, fstore, statestore):
             cli_server = ds.servers
             cli_server_source = ds.server_source
             root_logger.debug("will use discovered server: %s", cli_server[0])
+
+    if not cli_enroll_server:
+        if options.enroll_server:
+            cli_enroll_server = ds.master_kdc
+            cli_enroll_server_source = 'Provided as option'
+            root_logger.debug("will use provided server: %s", ', '.join(options.enroll_server))
+        elif ds.server and ds.master_kdc:
+            cli_enroll_server = ds.master_kdc
+            cli_enroll_server_source = ds.server_source
+            root_logger.debug("will use discovered server: %s", cli_enroll_server[0])
+        else:
+            cli_enroll_server = cli_server
+            cli_enroll_server_source = ds.server_source
+            root_logger.debug("will use discovered same server as for master: %s", cli_enroll_server[0])
 
     if ret == ipadiscovery.NOT_IPA_SERVER:
         root_logger.error("%s is not an IPA v2 Server.", cli_server[0])
@@ -1908,6 +1952,8 @@ def install(options, env, fstore, statestore):
     root_logger.debug("DNS Domain source: %s", cli_domain_source)
     root_logger.info("IPA Server: %s", ', '.join(cli_server))
     root_logger.debug("IPA Server source: %s", cli_server_source)
+    root_logger.info("Enrollment IPA Server: %s", ', '.join(cli_enroll_server))
+    root_logger.debug("Enrollment IPA Server source: %s", cli_enroll_server_source)
     root_logger.info("BaseDN: %s", cli_basedn)
     root_logger.debug("BaseDN source: %s", cli_basedn_source)
 
@@ -1975,11 +2021,12 @@ def install(options, env, fstore, statestore):
                     dnsok=False,
                     options=options,
                     filename=krb_name,
-                    client_domain=client_domain):
+                    client_domain=client_domain,
+                    cli_enroll_server=cli_enroll_server):
                 root_logger.error("Test kerberos configuration failed")
                 return CLIENT_INSTALL_ERROR
             env['KRB5_CONFIG'] = krb_name
-            join_args = ["/usr/sbin/ipa-join", "-s", cli_server[0], "-b", str(realm_to_suffix(cli_realm))]
+            join_args = ["/usr/sbin/ipa-join", "-s", cli_enroll_server[0], "-b", str(realm_to_suffix(cli_realm))]
             if options.debug:
                 join_args.append("-d")
                 env['XMLRPC_TRACE_CURL'] = 'yes'
@@ -2132,7 +2179,7 @@ def install(options, env, fstore, statestore):
     # Always back up sssd.conf. It gets updated by authconfig --enablekrb5.
     fstore.backup_file("/etc/sssd/sssd.conf")
     if options.sssd:
-        if configure_sssd_conf(fstore, cli_realm, cli_domain, cli_server, options, client_domain, hostname):
+        if configure_sssd_conf(fstore, cli_realm, cli_domain, cli_server, options, client_domain, hostname, cli_enroll_server):
             return CLIENT_INSTALL_ERROR
         root_logger.info("Configured /etc/sssd/sssd.conf")
 
@@ -2165,7 +2212,8 @@ def install(options, env, fstore, statestore):
                 dnsok=dnsok,
                 options=options,
                 filename="/etc/krb5.conf",
-                client_domain=client_domain):
+                client_domain=client_domain,
+                cli_enroll_server=cli_enroll_server):
             return CLIENT_INSTALL_ERROR
 
         root_logger.info(
