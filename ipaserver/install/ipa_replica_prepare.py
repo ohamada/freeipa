@@ -254,7 +254,8 @@ class ReplicaPrepare(admintool.AdminTool):
 
             self.copy_ds_certificate()
 
-            self.copy_httpd_certificate()
+            if not (options.hub or options.consumer):
+                self.copy_httpd_certificate()
 
             if options.setup_pkinit:
                 self.copy_pkinit_certificate()
