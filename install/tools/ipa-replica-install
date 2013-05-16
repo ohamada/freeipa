@@ -238,14 +238,12 @@ def install_http(config, auto_redirect):
 
     return http
 
-def install_bind_rw(config, options):
-    api.Backend.ldap2.connect(bind_dn=DIRMAN_DN,
-                              bind_pw=config.dirman_password)
+def create_bind_instance(config, options, on_master):
     if options.forwarders:
         forwarders = options.forwarders
     else:
         forwarders = ()
-    bind = bindinstance.BindInstance(dm_password=config.dirman_password)
+    bind = bindinstance.BindInstance(dm_password=config.dirman_password, on_master=on_master)
 
     if options.reverse_zone:
         if not bindinstance.verify_reverse_zone(options.reverse_zone, config.ip):
@@ -270,38 +268,14 @@ def install_bind_rw(config, options):
     bind.check_global_configuration()
     print ""
 
-
-def install_bind_ro(config,options):
-    with temporary_ldap2_connection(config.master_host_name, config.dirman_password, DIRMAN_DN):
-        if options.forwarders:
-            forwarders = options.forwarders
-        else:
-            forwarders = ()
-        bind = bindinstance.BindInstance(dm_password=config.dirman_password, on_master=False)
-
-        if options.reverse_zone:
-            if not bindinstance.verify_reverse_zone(options.reverse_zone, config.ip):
-                sys.exit(1)
-            reverse_zone = bindinstance.normalize_zone(options.reverse_zone)
-        else:
-            reverse_zone = bindinstance.find_reverse_zone(config.ip)
-            if reverse_zone is None and not options.no_reverse:
-                reverse_zone = util.get_reverse_zone_default(config.ip)
-                if not options.unattended and bindinstance.create_reverse():
-                    reverse_zone = bindinstance.read_reverse_zone(reverse_zone, config.ip)
-
-        if reverse_zone is not None:
-            print "Using reverse zone %s" % reverse_zone
-
-        bind.setup(config.host_name, config.ip_address, config.realm_name,
-                   config.domain_name, forwarders, options.conf_ntp, reverse_zone,
-                   ca_configured=options.setup_ca)
-        bind.create_instance()
-
-        print ""
-        bind.check_global_configuration()
-        print ""
-
+def install_bind(config, options, on_master):
+    if on_master:
+        api.Backend.ldap2.connect(bind_dn=DIRMAN_DN,
+                              bind_pw=config.dirman_password)
+        create_bind_instance(config, options, on_master)
+    else:
+        with temporary_ldap2_connection(config.master_host_name, config.dirman_password, DIRMAN_DN):
+            create_bind_instance(config, options, on_master)
 
 @contextmanager
 def temporary_ldap2_connection(host_name, bind_pw, bind_dn=DIRMAN_DN):
@@ -328,7 +302,7 @@ def temporary_ldap2_connection(host_name, bind_pw, bind_dn=DIRMAN_DN):
     object.__setattr__(api.Backend.ldap2, 'ldap_uri', cur_uri)
 
 
-def install_dns_records(config, options):
+def install_dns_records(config, options, on_master):
 
     if not bindinstance.dns_container_exists(config.master_host_name,
                                              ipautil.realm_to_suffix(config.realm_name),
@@ -339,7 +313,7 @@ def install_dns_records(config, options):
     # before our DS server is installed.
     with temporary_ldap2_connection(
             config.master_host_name, config.dirman_password):
-        bind = bindinstance.BindInstance(dm_password=config.dirman_password)
+        bind = bindinstance.BindInstance(dm_password=config.dirman_password, on_master=on_master)
         reverse_zone = bindinstance.find_reverse_zone(config.ip)
 
         bind.add_master_dns_records(config.host_name, config.ip_address,
@@ -694,7 +668,7 @@ def main():
     (CA, cs) = cainstance.install_replica_ca(config, dogtag_master_ds_port)
 
     # Always try to install DNS records
-    install_dns_records(config, options)
+    install_dns_records(config, options, ON_MASTER)
 
     # We need to ldap_enable the CA now that DS is up and running
     if CA and config.setup_ca:
@@ -734,10 +708,7 @@ def main():
     krb.restart()
 
     if options.setup_dns:
-        if ON_MASTER:
-            install_bind_rw(config, options)
-        else:
-            install_bind_ro(config, options)
+        install_bind(config, options, ON_MASTER)
 
     if ON_MASTER:
         # Restart httpd to pick up the new IPA configuration
@@ -747,6 +718,8 @@ def main():
     # Call client install script
     try:
         args = ["/usr/sbin/ipa-client-install", "--on-master", "--unattended", "--domain", config.domain_name, "--server", config.host_name, "--realm", config.realm_name]
+        if not ON_MASTER:
+            args += ["--enroll-server", config.master_host_name]
         if not options.create_sshfp:
             args.append("--no-dns-sshfp")
         if options.trust_sshfp:
