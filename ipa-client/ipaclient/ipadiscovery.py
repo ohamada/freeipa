@@ -225,8 +225,9 @@ class IPADiscovery(object):
 
         self.realm = krb_realm
         self.kdc = kdc
+
         krb_realm, master_kdc = self.ipadnssearchkrb(self.domain, search_masters=True)
-        self.master_kdc = master_kdc
+        self.master_kdc = master_kdc.split(',')
         self.realm_source = self.kdc_source = (
             'Discovered Kerberos DNS records from %s' % self.domain)
 
@@ -457,6 +458,7 @@ class IPADiscovery(object):
 
     def ipadnssearchkrb(self, tdomain, search_masters=False):
         realm = None
+        kdc_list = []
         kdc = None
         # now, check for a Kerberos realm the local host or domain is in
         qname = "_kerberos." + tdomain
@@ -481,14 +483,14 @@ class IPADiscovery(object):
             domain = realm.lower()
 
             if search_masters:
-                kdc = self.ipadns_search_srv(domain, '_kerberos-master._udp', 88,
+                kdc_list = self.ipadns_search_srv(domain, '_kerberos-master._udp', 88,
                                              break_on_first=False)
             else:
-                kdc = self.ipadns_search_srv(domain, '_kerberos._udp', 88,
+                kdc_list = self.ipadns_search_srv(domain, '_kerberos._udp', 88,
                                              break_on_first=False)
 
-            if kdc:
-                kdc = ','.join(kdc)
+            if kdc_list:
+                kdc = ','.join(kdc_list)
             else:
                 root_logger.debug("SRV record for KDC not found! Realm: %s, SRV record: %s" % (realm, qname))
                 kdc = None

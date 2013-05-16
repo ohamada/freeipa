@@ -1873,7 +1873,7 @@ def install(options, env, fstore, statestore):
             cli_enroll_server_source = ds.server_source
             root_logger.debug("will use discovered server: %s", cli_enroll_server[0])
         else:
-            cli_enroll_server = cli_server
+            cli_enroll_server = ds.servers
             cli_enroll_server_source = ds.server_source
             root_logger.debug("will use discovered same server as for master: %s", cli_enroll_server[0])
 
@@ -2254,10 +2254,10 @@ def install(options, env, fstore, statestore):
         return CLIENT_INSTALL_ERROR
 
     if not options.on_master:
-        client_dns(cli_server[0], hostname, options.dns_updates)
+        client_dns(cli_enroll_server[0], hostname, options.dns_updates)
         configure_certmonger(fstore, subject_base, cli_realm, hostname, options)
 
-    update_ssh_keys(cli_server[0], hostname, ipaservices.knownservices.sshd.get_config_dir(), options.create_sshfp)
+    update_ssh_keys(cli_enroll_server[0], hostname, ipaservices.knownservices.sshd.get_config_dir(), options.create_sshfp)
 
     try:
         os.remove(CCACHE_FILE)
