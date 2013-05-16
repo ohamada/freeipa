@@ -178,6 +178,7 @@ class Service(object):
         fd = None
         path = ipautil.SHARE_DIR + ldif
         nologlist=[]
+        conn_uris = []
 
         if sub_dict is not None:
             txt = ipautil.template_file(path, sub_dict)
@@ -196,10 +197,10 @@ class Service(object):
         # use URI of admin connection
         if not self.admin_conn:
             self.ldap_connect()
+
+        conn_uris.append(["-H", self.admin_conn.ldap_uri])
         if (not self.on_master) and is_forward_mod(path):
-            arg_conn_uri = ["-H", self.master_conn.ldap_uri]
-        else:
-            arg_conn_uri = ["-H", self.admin_conn.ldap_uri]
+            conn_uris.append(["-H", self.master_conn.ldap_uri])
 
         auth_parms = []
         if self.dm_password:
@@ -213,29 +214,30 @@ class Service(object):
                 auth_parms = ["-Y", "GSSAPI"]
 
         temp_args += auth_parms
-        args = temp_args + arg_conn_uri
 
         try:
-            (stdo,stde,errc) = ipautil.run(args, raiseonerr=False, nolog=nologlist)
-            if not self.on_master:
-                # referral returned
-                if errc == LDAP_ERR_REFERRAL:
-                    ref_cnt = REFERRAL_CNT
-                    while (errc == LDAP_ERR_REFERRAL) and ref_cnt:
-                        # parse the first referral address from the output
-                        clean_stde = stde.replace("\t","").split("\n")
-                        referral_addr = clean_stde[clean_stde.index("referrals:") + 1]
-                        if not referral_addr:
-                            break
-                        args = temp_args + ["-H", referral_addr]
-                        (stdo,stde,errc) = ipautil.run(args, raiseonerr=False, nolog=nologlist)
-                        ref_cnt -= 1
+            for conn_uri in conn_uris:
+                args = temp_args + conn_uri
+                (stdo,stde,errc) = ipautil.run(args, raiseonerr=False, nolog=nologlist)
+                if not self.on_master:
+                    # referral returned
+                    if errc == LDAP_ERR_REFERRAL:
+                        ref_cnt = REFERRAL_CNT
+                        while (errc == LDAP_ERR_REFERRAL) and ref_cnt:
+                            # parse the first referral address from the output
+                            clean_stde = stde.replace("\t","").split("\n")
+                            referral_addr = clean_stde[clean_stde.index("referrals:") + 1]
+                            if not referral_addr:
+                                break
+                            args = temp_args + ["-H", referral_addr]
+                            (stdo,stde,errc) = ipautil.run(args, raiseonerr=False, nolog=nologlist)
+                            ref_cnt -= 1
 
-                    if errc:
-                        if not ref_cnt:
-                            root_logger.critical("Failed to load %s: Too many referrals" % ldif)
-                        else:
-                            root_logger.critical("Failed to load %s: %s" % (ldif, ' '.join(args + nologlist)))
+                        if errc:
+                            if not ref_cnt:
+                                root_logger.critical("Failed to load %s: Too many referrals" % ldif)
+                            else:
+                                root_logger.critical("Failed to load %s: %s" % (ldif, ' '.join(args + nologlist)))
         finally:
             if pw_name:
                 os.remove(pw_name)
