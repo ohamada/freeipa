@@ -2170,7 +2170,7 @@ def install(options, env, fstore, statestore):
         configure_ipa_conf(fstore, cli_basedn, cli_realm, cli_domain, cli_server)
         root_logger.info("Created /etc/ipa/default.conf")
 
-    api.bootstrap(context='cli_installer', debug=options.debug)
+    api.bootstrap(context='cli_installer', xmlrpc_uri='https://%s/ipa/xml' % ipautil.format_netloc(cli_enroll_server[0]), debug=options.debug)
     api.finalize()
     if 'config_loaded' not in api.env:
         root_logger.error("Failed to initialize IPA API.")
