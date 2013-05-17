@@ -396,14 +396,14 @@ class ReplicationManager(object):
 
     def get_replica_attributes(self, conn):
         try:
-            replica_type = installutils.get_replica_type(conn.host,other_conn=conn)
+            actual_replica_type = installutils.get_replica_type(conn.host,other_conn=conn)
         except errors.NotFound:
             # we are setting new replica that has not been registered yes
-            replica_type = self.replica_type
+            actual_replica_type = self.replica_type
         # sets whether the replica is Read-Write (master) or Read Only (consumer, hub)
-        replica_type = self.get_replica_type(True if replica_type == "master" else False)
+        replica_type = self.get_replica_type(True if actual_replica_type == "master" else False)
         # sets whether the replica can write to changelog (master, hub)
-        flags = self.get_replica_flags(True if replica_type != "consumer" else False)
+        flags = self.get_replica_flags(True if actual_replica_type != "consumer" else False)
         return (replica_type, flags)
 
     def replica_dn(self):
@@ -949,8 +949,13 @@ class ReplicationManager(object):
         if replpw is not None:
             self.add_replication_manager(conn, repldn, replpw)
         self.replica_config(conn, replica_id, repldn)
+
         # setup changelog only on master and hub replica
-        if not self.replica_type == "consumer":
+        try:
+            replica_type = installutils.get_replica_type(conn.host, other_conn=conn)
+        except errors.NotFound:
+            replica_type = self.replica_type
+        if replica_type != "consumer":
             self.setup_changelog(conn)
 
     def setup_replication(self, r_hostname, r_port=389, r_sslport=636,
